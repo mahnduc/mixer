@@ -5,19 +5,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Mixer</title>
-  <meta name="description" content="Ghép phụ âm, nguyên âm và thanh điệu thành từ tiếng Việt.">
+  <meta name="description" content="Ghép phụ âm, nguyên âm và thanh điệu thành từ tiếng Việt bằng thẻ kéo thả.">
   <meta name="author" content="mahnduc">
   <meta name="theme-color" content="#00d2ff">
   <link rel="canonical" href="https://mahnduc.github.io/mixer/">
-  <link rel="icon" type="image/svg+xml" href="https://api.iconify.design/boxicons/dino.svg?color=%2300d2ff">
+  <link rel="icon" type="image/svg+xml" href="https://api.iconify.design/boxicons/dino.svg?color=%23b8573a">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Mixer">
   <meta property="og:locale" content="vi_VN">
   <meta property="og:url" content="https://mahnduc.github.io/mixer/">
   <meta property="og:title" content="Mixer">
-  <meta property="og:description" content="Ghép phụ âm, nguyên âm và thanh điệu thành từ tiếng Việt.">
-  <meta property="og:image"
-    content="https://images.weserv.nl/?url=api.iconify.design/boxicons/dino.svg%3Fcolor%3D%2300d2ff&amp;w=512&amp;h=512&amp;fit=contain&amp;bg=0f172a&amp;output=png">
+  <meta property="og:description" content="Ghép phụ âm, nguyên âm và thanh điệu thành từ tiếng Việt bằng thẻ kéo thả.">
+  <meta property="og:image" content="https://mahnduc.github.io/mixer/assets/boxicons--dino.png">
   <meta property="og:image:type" content="image/png">
   <meta property="og:image:width" content="512">
   <meta property="og:image:height" content="512">
@@ -25,8 +24,7 @@
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="Mixer">
   <meta name="twitter:description" content="Ghép phụ âm, nguyên âm và thanh điệu thành từ tiếng Việt bằng thẻ kéo thả.">
-  <meta name="twitter:image"
-    content="https://images.weserv.nl/?url=api.iconify.design/boxicons/dino.svg%3Fcolor%3D%2300d2ff&amp;w=512&amp;h=512&amp;fit=contain&amp;bg=0f172a&amp;output=png">
+  <meta name="twitter:image" content="https://mahnduc.github.io/mixer/assets/boxicons--dino.png">
 
   <link rel="stylesheet" href="./theme.css">
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
@@ -47,8 +45,7 @@
 </head>
 
 <body class="relative min-h-[100svh] flex flex-col overflow-x-hidden bg-bg text-text font-sans">
-  <header
-    class="relative z-10 flex items-center gap-2.5 px-5 pt-[max(1.25rem,env(safe-area-inset-top))] text-3xl font-extrabold">
+  <header class="relative z-10 flex items-center gap-2.5 px-5 pt-[max(1.25rem,env(safe-area-inset-top))] text-3xl font-extrabold">
     <iconify-icon icon="boxicons:dino" class="size-8 text-con"></iconify-icon>
     <span class="bg-gradient-to-r from-con to-vow bg-clip-text text-transparent">Mixer</span>
   </header>
@@ -57,8 +54,7 @@
     <div class="flex flex-col items-center gap-6">
       <div id="row" class="flex flex-wrap justify-center gap-3 sm:gap-5"></div>
       <p id="result" aria-live="polite" class="min-h-12 text-4xl font-bold tracking-wide"></p>
-      <button id="confirm" type="button" disabled
-        class="flex items-center gap-2 px-8 py-3 rounded-full font-bold text-con-t bg-gradient-to-r from-con to-vow shadow-[0_8px_24px_color-mix(in_srgb,var(--con)_35%,transparent)] transition duration-150 ease-out enabled:hover:brightness-110 enabled:hover:-translate-y-0.5 enabled:active:scale-95 enabled:active:translate-y-0 enabled:active:brightness-90 enabled:active:shadow-[0_2px_8px_color-mix(in_srgb,var(--con)_35%,transparent)] focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-hl opacity-40 disabled:cursor-not-allowed">
+      <button id="confirm" type="button" disabled class="flex items-center gap-2 px-8 py-3 rounded-full font-bold text-con-t bg-gradient-to-r from-con to-vow shadow-[0_8px_24px_color-mix(in_srgb,var(--con)_35%,transparent)] transition duration-150 ease-out enabled:hover:brightness-110 enabled:hover:-translate-y-0.5 enabled:active:scale-95 enabled:active:translate-y-0 enabled:active:brightness-90 enabled:active:shadow-[0_2px_8px_color-mix(in_srgb,var(--con)_35%,transparent)] focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-hl opacity-40 disabled:cursor-not-allowed">
         <iconify-icon icon="andrsrxn:cursor-click" class="size-5 shrink-0"></iconify-icon>
         Mix
       </button>
@@ -75,16 +71,11 @@
     </section>
   </main>
 
-  <div id="panel"
-    class="hidden fixed inset-0 z-50 overflow-auto bg-black/30 p-3 sm:p-5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-    <section id="sheet"
-      class="w-full max-w-5xl min-w-0 m-auto p-4 sm:p-6 rounded-3xl bg-bg shadow-[0_20px_60px_rgba(0,0,0,.35)]">
-      <label
-        class="mb-5 flex items-center gap-3 px-4 h-12 rounded-2xl bg-[color-mix(in_srgb,var(--text)_8%,transparent)]">
+  <div id="panel" class="hidden fixed inset-0 z-50 overflow-auto bg-black/30 p-3 sm:p-5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+    <section id="sheet" class="w-full max-w-5xl min-w-0 m-auto p-4 sm:p-6 rounded-3xl bg-bg shadow-[0_20px_60px_rgba(0,0,0,.35)]">
+      <label class="mb-5 flex items-center gap-3 px-4 h-12 rounded-2xl bg-[color-mix(in_srgb,var(--text)_8%,transparent)]">
         <i data-lucide="keyboard" class="size-5 shrink-0 text-muted"></i>
-        <input id="typed" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
-          placeholder="Gõ âm rồi nhấn Enter" aria-label="Gõ âm từ bàn phím"
-          class="flex-1 w-0 min-w-0 bg-transparent outline-none text-base placeholder:text-muted">
+        <input id="typed" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Gõ âm rồi nhấn Enter" aria-label="Gõ âm từ bàn phím" class="flex-1 w-0 min-w-0 bg-transparent outline-none text-base placeholder:text-muted">
       </label>
 
       <div id="groups" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full min-w-0"></div>
