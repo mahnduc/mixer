@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Mixer</title>
+  <link rel="icon" type="image/svg+xml" href="https://api.iconify.design/boxicons/dino.svg?color=%2300d2ff">
+  <link rel="stylesheet" href="./theme.css">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+  <script src="https://code.iconify.design/iconify-icon/3.0.0/iconify-icon.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: Object.fromEntries(
+            ["bg", "text", "muted", "con", "con-t", "vow", "vow-t", "hl"]
+              .map(k => [k, `var(--${k})`])
+          )
+        }
+      }
+    };
+  </script>
+</head>
+
+<body class="relative min-h-[100svh] flex flex-col overflow-x-hidden bg-bg text-text font-sans">
+  <header class="relative z-10 flex items-center gap-2.5 px-5 pt-[max(1.25rem,env(safe-area-inset-top))] text-3xl font-extrabold">
+    <iconify-icon icon="boxicons:dino" class="size-8 text-con"></iconify-icon>
+    <span class="bg-gradient-to-r from-con to-vow bg-clip-text text-transparent">Mixer</span>
+  </header>
+
+  <main class="flex-1 flex flex-col items-center px-4 pt-[10vh] pb-12">
+    <div class="flex flex-col items-center gap-6">
+      <div id="row" class="flex flex-wrap justify-center gap-3 sm:gap-5"></div>
+      <p id="result" aria-live="polite" class="min-h-12 text-4xl font-bold tracking-wide"></p>
+      <button id="confirm" type="button" disabled class="flex items-center gap-2 px-8 py-3 rounded-full font-bold text-con-t bg-gradient-to-r from-con to-vow shadow-[0_8px_24px_color-mix(in_srgb,var(--con)_35%,transparent)] transition duration-150 ease-out enabled:hover:brightness-110 enabled:hover:-translate-y-0.5 enabled:active:scale-95 enabled:active:translate-y-0 enabled:active:brightness-90 enabled:active:shadow-[0_2px_8px_color-mix(in_srgb,var(--con)_35%,transparent)] focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-hl opacity-40 disabled:cursor-not-allowed">
+        <iconify-icon icon="andrsrxn:cursor-click" class="size-5 shrink-0"></iconify-icon>
+        Mix
+      </button>
+    </div>
+
+    <section class="w-[min(92vw,640px)] mt-12">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-bold">Danh sách từ đã ghép</h2>
+        <span id="count" class="text-sm text-muted">0 từ</span>
+      </div>
+      <div id="savedWords" class="border-t border-[color-mix(in_srgb,var(--text)_15%,transparent)]">
+        <p class="py-6 text-center text-muted">Chưa có từ nào được lưu.</p>
+      </div>
+    </section>
+  </main>
+
+  <div id="panel" class="hidden fixed inset-0 z-50 overflow-auto bg-black/30 p-3 sm:p-5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+    <section id="sheet" class="w-full max-w-5xl min-w-0 m-auto p-4 sm:p-6 rounded-3xl bg-bg shadow-[0_20px_60px_rgba(0,0,0,.35)]">
+      <label class="mb-5 flex items-center gap-3 px-4 h-12 rounded-2xl bg-[color-mix(in_srgb,var(--text)_8%,transparent)]">
+        <i data-lucide="keyboard" class="size-5 shrink-0 text-muted"></i>
+        <input id="typed" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Gõ âm rồi nhấn Enter" aria-label="Gõ âm từ bàn phím" class="flex-1 w-0 min-w-0 bg-transparent outline-none text-base placeholder:text-muted">
+      </label>
+
+      <div id="groups" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full min-w-0"></div>
+
+      <div id="tones" class="hidden mt-5 pt-5 border-t border-[color-mix(in_srgb,var(--text)_15%,transparent)]">
+        <p id="toneLabel" class="mb-3 text-sm font-medium text-muted"></p>
+        <div id="toneKeys" class="grid grid-cols-3 sm:grid-cols-6 gap-2 w-full"></div>
+      </div>
+    </section>
+  </div>
+
+  <script src="./app.js"></script>
+  <script>
+    if (window.lucide) lucide.createIcons();
+  </script>
+</body>
+
+</html>

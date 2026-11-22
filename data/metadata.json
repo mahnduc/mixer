@@ -1,0 +1,70 @@
+{
+  "metadata": {
+    "name": "Mixer",
+    "description": "Danh sách đơn âm và thanh điệu tiếng Việt"
+  },
+  "phonetics": {
+    "vowels": {
+      "single": [
+        "a","ă","â",
+        "e","ê",
+        "i","y",
+        "o","ô","ơ",
+        "u","ư"
+      ],
+      "double": [],
+      "triple": [],
+      "quadruple": []
+    },
+    "consonants": {
+      "single": [
+        "b",
+        "c",
+        "d",
+        "đ",
+        "g",
+        "h",
+        "k",
+        "l",
+        "m",
+        "n",
+        "p",
+        "q",
+        "r",
+        "s",
+        "t",
+        "v",
+        "x"
+      ],
+      "double": [],
+      "triple": [],
+      "quadruple": []
+    },
+    "tones": [
+      { "id": "ngang", "name": "ngang", "mark": "",       "example": "a" },
+      { "id": "sac",   "name": "sắc",   "mark": "\u0301", "example": "á" },
+      { "id": "huyen", "name": "huyền", "mark": "\u0300", "example": "à" },
+      { "id": "hoi",   "name": "hỏi",   "mark": "\u0309", "example": "ả" },
+      { "id": "nga",   "name": "ngã",   "mark": "\u0303", "example": "ã" },
+      { "id": "nang",  "name": "nặng",  "mark": "\u0323", "example": "ạ" }
+    ],
+    "count": {
+      "vowels": {
+        "single": 12,
+        "double": 0,
+        "triple": 0,
+        "quadruple": 0,
+        "total": 12
+      },
+      "consonants": {
+        "single": 17,
+        "double": 0,
+        "triple": 0,
+        "quadruple": 0,
+        "total": 17
+      },
+      "tones": 6,
+      "total": 29
+    }
+  }
+}
