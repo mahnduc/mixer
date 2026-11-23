@@ -89,6 +89,7 @@ const FONTS = [
   { id: "comic", label: "Comic Sans MS", css: '"Comic Sans MS", "Comic Neue", cursive' }
 ];
 const FONT_MAP = new Map(FONTS.map(font => [font.id, font]));
+const DEFAULT_DOC_FONT = "arial";
 
 const cleanFont = value =>
   typeof value === "string" && FONT_MAP.has(value) ? value : null;
@@ -132,6 +133,23 @@ const paintText = (node, color) => {
   else if (color) node.style.color = color;
 };
 
+// Tạo span chữ liên kết (data-wid) với một thẻ chữ, tô màu theo màu hiện tại của thẻ.
+const makeLinkedSpan = (wordId, color) => {
+  const span = document.createElement("span");
+  span.dataset.wid = wordId;
+  paintText(span, cleanWordColor(color));
+  return span;
+};
+
+// Bọc đoạn [start, end) của một text node bằng `span` (tách node nếu cần).
+const wrapTextRange = (node, start, end, span) => {
+  const mid = start > 0 ? node.splitText(start) : node;
+  if (mid.nodeValue.length > end - start) mid.splitText(end - start);
+  mid.replaceWith(span);
+  span.append(mid);
+  return span;
+};
+
 const cleanItem = item =>
   item && typeof item.word === "string" && item.word
     ? { word: item.word.slice(0, MAX_WORD_LEN), color: cleanColor(item.color) }
@@ -160,23 +178,55 @@ const sameStyle = (a, b) =>
   Boolean(a.underline) === Boolean(b.underline) &&
   (a.size || null) === (b.size || null) &&
   (a.font || null) === (b.font || null) &&
-  Boolean(a.gradient) === Boolean(b.gradient);
+  Boolean(a.gradient) === Boolean(b.gradient) &&
+  (a.wid || null) === (b.wid || null);
 
+let TONES = [];
+let savedWords = [];
+let restoredSlots = null;
+let collections = [];
+let sentenceBlocks = [];
+let savedSentences = [];
+let currentSavedId = null;
+let colorLegend = {};
+let markedCollectionId = null;
+
+const DEFAULT_DOC_SIZE = 18;
+let docSize = DEFAULT_DOC_SIZE;
+let docFont = DEFAULT_DOC_FONT;
+
+// Chữ trong tệp có thể liên kết (wid) với một thẻ chữ trong danh sách từ:
+// màu của chữ luôn lấy theo màu hiện tại của thẻ chữ đó.
 const cleanRun = run => {
   if (!run || typeof run.text !== "string") return null;
 
   const text = run.text.replace(/\u00a0/g, " ").replace(/[\u200b\r]/g, "");
   if (!text) return null;
 
+  const word =
+    typeof run.wid === "string" && run.wid
+      ? savedWords.find(w => w.id === run.wid) || null
+      : null;
+
+  let color = cleanColor(run.color);
+  let gradient = run.gradient === true;
+
+  if (word) {
+    const wc = cleanWordColor(word.color);
+    gradient = wc === GRADIENT;
+    color = gradient ? null : wc;
+  }
+
   return {
     text,
-    color: cleanColor(run.color),
+    color,
     bold: run.bold === true,
     italic: run.italic === true,
     underline: run.underline === true,
     size: cleanSize(run.size),
     font: cleanFont(run.font),
-    gradient: run.gradient === true
+    gradient,
+    wid: word ? word.id : null
   };
 };
 
@@ -256,12 +306,15 @@ function domToRuns(root) {
     }
 
     const next = { ...style };
+    const linked = node.dataset?.wid || null;
+    if (linked) next.wid = linked;
 
     if (tag === "B" || tag === "STRONG") next.bold = true;
     if (tag === "I" || tag === "EM") next.italic = true;
     if (tag === "U") next.underline = true;
     if (tag === "FONT" && node.getAttribute("color")) {
       next.color = parseCssColor(node.getAttribute("color"));
+      if (!linked) next.wid = null;
     }
 
     const css = node.style;
@@ -269,6 +322,8 @@ function domToRuns(root) {
       if (css.color && css.color !== "transparent") {
         next.color = parseCssColor(css.color);
         next.gradient = false;
+        // Màu đặt thủ công bên trong chữ liên kết => gỡ liên kết.
+        if (!linked) next.wid = null;
       }
 
       if (css.fontSize) {
@@ -284,6 +339,7 @@ function domToRuns(root) {
         css.webkitBackgroundClip === "text"
       ) {
         next.gradient = true;
+        if (!linked) next.wid = null;
       }
       if (css.fontWeight) {
         next.bold = css.fontWeight === "bold" || Number(css.fontWeight) >= 600;
@@ -310,7 +366,8 @@ function domToRuns(root) {
       underline: false,
       size: null,
       font: null,
-      gradient: false
+      gradient: false,
+      wid: null
     })
   );
 
@@ -320,7 +377,8 @@ function domToRuns(root) {
 function appendRuns(runs, container) {
   runs.forEach(run => {
     const styled =
-      run.color || run.bold || run.italic || run.underline || run.size || run.font || run.gradient;
+      run.color || run.bold || run.italic || run.underline || run.size || run.font ||
+      run.gradient || run.wid;
 
     run.text.split("\n").forEach((part, i) => {
       if (i > 0) container.append(document.createElement("br"));
@@ -333,6 +391,7 @@ function appendRuns(runs, container) {
 
       const span = document.createElement("span");
       span.textContent = part;
+      if (run.wid) span.dataset.wid = run.wid;
       if (run.gradient) setGradientText(span);
       else if (run.color) span.style.color = run.color;
       if (run.size) span.style.fontSize = `${run.size}px`;
@@ -348,18 +407,9 @@ function appendRuns(runs, container) {
 const reduceMotion =
   window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
-let TONES = [];
-let savedWords = [];
-let restoredSlots = null;
-let collections = [];
-let sentenceBlocks = [];
-let savedSentences = [];
-let currentSavedId = null;
-let colorLegend = {};
-let markedCollectionId = null;
-
 const BLOCK_TYPES = ["p", "h1", "h2", "h3", "h4", "ul", "ol", "quote", "cite", "img", "table"];
 const ALIGNS = ["left", "center", "right", "justify"];
+const SPECIAL_KINDS = ["quote", "cite"];
 
 const runsToBlocks = runs => (runs.length ? [{ type: "p", align: null, runs }] : []);
 
@@ -368,7 +418,9 @@ const blockText = block =>
     ? block.rows.map(row => row.map(runsToText).join("\t")).join("\n")
     : block.type === "img"
       ? "[ảnh]"
-      : (block.type === "cite" && block.runs.length ? "— " : "") + runsToText(block.runs);
+      : block.type === "cite" && block.runs.length
+        ? `— ${runsToText(block.runs)} —`
+        : runsToText(block.runs);
 
 const blocksToText = blocks => blocks.map(blockText).join("\n");
 
@@ -461,7 +513,8 @@ const cleanBlock = block => {
   return {
     type,
     align:
-      ALIGNS.includes(block?.align) && (keepLeft || block.align !== "left")
+      ALIGNS.includes(block?.align) &&
+        (keepLeft || block.align !== "left")
         ? block.align
         : null,
     indent: type === "p" && block?.indent === true,
@@ -604,6 +657,9 @@ function readStorage() {
 
     colorLegend = cleanLegend(data.colorLegend);
 
+    docSize = cleanSize(data.docSize) ?? DEFAULT_DOC_SIZE;
+    docFont = cleanFont(data.docFont) ?? DEFAULT_DOC_FONT;
+
     if (Array.isArray(data.slots)) {
       const list = [];
 
@@ -636,6 +692,8 @@ function readStorage() {
     colorLegend = {};
     markedCollectionId = null;
     restoredSlots = null;
+    docSize = DEFAULT_DOC_SIZE;
+    docFont = DEFAULT_DOC_FONT;
   }
 }
 
@@ -644,7 +702,9 @@ function persist(slots) {
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
-        version: 11,
+        version: 14,
+        docSize,
+        docFont,
         savedWords,
         collections,
         sentenceBlocks,
@@ -923,7 +983,7 @@ function renderBlocks(blocks, container) {
       list.append(node);
     } else {
       list = null;
-      const special = block.type === "quote" || block.type === "cite";
+      const special = SPECIAL_KINDS.includes(block.type);
       node = document.createElement(special ? "p" : block.type);
       if (special) node.dataset.kind = block.type;
       if (block.indent) node.dataset.indent = "1";
@@ -1006,6 +1066,7 @@ function startDrag(srcEl, down, o = {}) {
       ghost = srcEl.cloneNode(true);
       ghost.removeAttribute("data-slot");
       ghost.removeAttribute("data-chip");
+      ghost.removeAttribute("data-word");
       ghost.removeAttribute("id");
       ghost.classList.remove("relative", "ring-4", "ring-hl", "scale-105", "transition");
     }
@@ -1183,6 +1244,14 @@ readStorage();
 
 function init({ phonetics: phoneticsData }) {
   TONES = phoneticsData.tones || [];
+
+  const applyDocDefaults = () => {
+    const root = document.documentElement.style;
+    root.setProperty("--doc-size", `${docSize}px`);
+    root.setProperty("--doc-font", FONT_MAP.get(docFont || DEFAULT_DOC_FONT).css);
+  };
+
+  applyDocDefaults();
 
   const tag = (groups, type) =>
     Object.entries(groups || {}).flatMap(([key, list]) =>
@@ -1593,6 +1662,7 @@ function init({ phonetics: phoneticsData }) {
   };
 
   let suppressClick = false;
+  const releaseClick = () => setTimeout(() => { suppressClick = false; }, 60);
 
   const attachDrag = (box, index) => {
     const slot = slots[index];
@@ -1638,7 +1708,7 @@ function init({ phonetics: phoneticsData }) {
           suppressClick = true;
           if (!empty) emptyBox();
         },
-        onEnd: () => setTimeout(() => { suppressClick = false; }, 60),
+        onEnd: releaseClick,
         onDrop: node => {
           const to = Number(node.dataset.slot);
           flipRender(() => {
@@ -1679,7 +1749,7 @@ function init({ phonetics: phoneticsData }) {
         onFrame: (x, y) => updateDropCaret(x, y),
         onEnd: () => {
           hideDropCaret();
-          setTimeout(() => { suppressClick = false; }, 60);
+          releaseClick();
         },
         onDrop: (node, point) => {
           if (node.dataset.collection !== undefined) {
@@ -2022,14 +2092,59 @@ function init({ phonetics: phoneticsData }) {
     renderCollections();
   };
 
-  const deleteWord = id => {
-    savedWords = savedWords.filter(word => word.id !== id);
+  // Gỡ liên kết giữa chữ trong tệp và các thẻ chữ sắp bị xóa (chữ giữ nguyên màu hiện tại).
+  function unlinkWords(ids) {
+    let changed = false;
+
+    editor.querySelectorAll("[data-wid]").forEach(node => {
+      if (ids.has(node.dataset.wid)) {
+        delete node.dataset.wid;
+        changed = true;
+      }
+    });
+
+    if (changed) syncFromEditor();
+  }
+
+  const dropWords = ids => {
+    unlinkWords(ids);
+    savedWords = savedWords.filter(word => !ids.has(word.id));
     collections.forEach(col => {
-      col.wordIds = col.wordIds.filter(wordId => wordId !== id);
+      col.wordIds = col.wordIds.filter(wordId => !ids.has(wordId));
     });
     persist(slots);
     renderAll();
   };
+
+  const deleteWord = id => dropWords(new Set([id]));
+
+  const clearListedWords = () => {
+    const words = listedWords();
+    if (!words.length) return;
+
+    if (
+      !window.confirm(
+        `Xóa tất cả ${words.length} từ trong danh sách từ? ` +
+        "(Các từ nằm trong bộ sưu tập sẽ được giữ lại.)"
+      )
+    ) {
+      return;
+    }
+
+    dropWords(new Set(words.map(word => word.id)));
+    showToast(`Đã xóa ${words.length} từ`);
+  };
+
+  const clearWordsBtn = mkBtn(
+    `${toolBtnClass} ml-2`,
+    "Xóa nhanh tất cả từ trong danh sách từ",
+    '<i data-lucide="trash-2" class="size-4"></i><span class="text-sm font-semibold">Xóa tất cả</span>'
+  );
+  clearWordsBtn.onclick = event => {
+    event.stopPropagation();
+    clearListedWords();
+  };
+  $("count").after(clearWordsBtn);
 
   const buildWordCard = (item, collectionId = null, compact = false) => {
     const inCollection = Boolean(collectionId);
@@ -2038,7 +2153,7 @@ function init({ phonetics: phoneticsData }) {
       "div",
       "flex items-center gap-1 pl-1 pr-1 max-w-full min-w-0 rounded-2xl font-bold select-none cursor-grab " +
       KEY + " " + WORD_CARD + " " +
-      (inCollection || compact ? "py-1 text-lg" : "py-2 text-2xl")
+      (inCollection || compact ? "py-1" : "py-2")
     );
 
     card.title = "Kéo vào bộ sưu tập, vào tệp hoặc vào ô để nạp lại từ này";
@@ -2067,8 +2182,12 @@ function init({ phonetics: phoneticsData }) {
 
     const labelEl = el("span", "px-1 min-w-0 truncate whitespace-nowrap", item.word);
     labelEl.title = item.word;
+    labelEl.style.fontSize = "var(--doc-size, 18px)";
+    labelEl.style.fontFamily = "var(--doc-font, inherit)";
     paintText(labelEl, item.color);
-    if (inCollection) card.dataset.word = item.id;
+
+    // Mọi thẻ chữ đều nhận màu kéo thả, kể cả khi chưa thuộc bộ sưu tập.
+    card.dataset.word = item.id;
 
     card.append(grip, labelEl, remove);
     attachWordDrag(card, item, collectionId);
@@ -2086,6 +2205,7 @@ function init({ phonetics: phoneticsData }) {
 
     container.className = "flex flex-wrap gap-3 pt-2 min-h-16 rounded-2xl transition";
     $("count").textContent = `${words.length} từ`;
+    clearWordsBtn.disabled = !words.length;
 
     if (!words.length) {
       container.replaceChildren(
@@ -2124,15 +2244,17 @@ function init({ phonetics: phoneticsData }) {
 }
 .rt-tool[aria-pressed="true"] { background: color-mix(in srgb, var(--text) 16%, transparent); }
 .rt-doc [data-indent="1"] { text-indent: 2em; }
+.rt-doc.rt-doc { font-size: var(--doc-size, 18px); font-family: var(--doc-font, inherit); }
 .rt-doc [data-kind="quote"] {
   text-align: center; font-style: italic; font-size: 1.15em;
   margin: .6em 1.5rem .2em;
 }
 .rt-doc [data-kind="cite"] {
-  text-align: center; font-size: .9em; opacity: .75;
+  text-align: right; font-size: .9em; opacity: .75;
   margin: 0 1.5rem .6em;
 }
 .rt-doc [data-kind="cite"]::before { content: "— "; }
+.rt-doc [data-kind="cite"]::after { content: " —"; }
 .rt-doc table { width: 100%; table-layout: fixed; border-collapse: collapse; margin: .5em 0; }
 .rt-doc td {
   border: 1px solid color-mix(in srgb, var(--text) 30%, transparent);
@@ -2218,6 +2340,12 @@ function init({ phonetics: phoneticsData }) {
   const italicBtn = makeToolBtn("italic", "In nghiêng (Ctrl+I)");
   const underlineBtn = makeToolBtn("underline", "Gạch chân (Ctrl+U)");
   const plainBtn = makeToolBtn("remove-formatting", "Xóa định dạng của chữ đang chọn");
+  const upperBtn = makeToolBtn("case-upper", "VIẾT HOA chữ đang chọn");
+  const lowerBtn = makeToolBtn("case-lower", "viết thường chữ đang chọn");
+  const splitBtn = makeToolBtn(
+    "scissors",
+    "Tách chữ đang bôi đen thành thẻ chữ và đưa về danh sách từ / bộ sưu tập (chữ vẫn được giữ trong tệp và liên kết màu với thẻ)"
+  );
 
   const selectClass =
     `h-9 px-2 rounded-full text-sm font-semibold bg-bg text-text ${BORDER} ${FOCUS}`;
@@ -2233,6 +2361,8 @@ function init({ phonetics: phoneticsData }) {
       return option;
     })
   );
+  const defaultFontOption = fontSelect.options[0];
+  let defaultSizeItem = null;
 
   const sizeWrap = el("div", "relative");
   const sizeLabel = el("span", "truncate", "Mặc định");
@@ -2256,10 +2386,10 @@ function init({ phonetics: phoneticsData }) {
   const closeSizeMenu = () => sizeMenu.classList.add("hidden");
 
   const setSizeValue = value => {
-    sizeLabel.textContent = value ? `${value} px` : "Mặc định";
+    sizeLabel.textContent = `${value || docSize} px`;
   };
 
-  [["", "Mặc định"], ...FONT_SIZES.map(n => [String(n), `${n} px`])].forEach(([value, text]) => {
+  [["", `Mặc định (${docSize} px)`], ...FONT_SIZES.map(n => [String(n), `${n} px`])].forEach(([value, text]) => {
     const item = el(
       "button",
       "w-full text-left rounded-lg px-2 py-1 text-sm " +
@@ -2267,14 +2397,14 @@ function init({ phonetics: phoneticsData }) {
       text
     );
     item.type = "button";
+    if (value === "") defaultSizeItem = item;
     item.addEventListener("mousedown", event => event.preventDefault());
     item.onclick = event => {
       event.stopPropagation();
       closeSizeMenu();
       setSizeValue(value);
       if (!applyInline("size", Number(value) || null, true)) {
-        showToast(needTextHint);
-        updateToolbarState();
+        setDocDefaults({ size: Number(value) || DEFAULT_DOC_SIZE });
       }
     };
     sizeMenu.append(item);
@@ -2289,25 +2419,27 @@ function init({ phonetics: phoneticsData }) {
 
   sizeWrap.append(sizeBtn, sizeMenu);
 
-  const needTextHint = "Hãy bôi đen chữ (hoặc đặt con trỏ trong tiêu đề) để định dạng";
+  const defaultFontName = () => FONT_MAP.get(docFont || DEFAULT_DOC_FONT).label;
 
-  const textPipette = makePipette(
-    "Màu chữ / màu ảnh tùy chọn (bôi đen chữ, hoặc chọn ảnh)",
-    iconToolClass,
-    {
-      onChange: value => {
-        if (!applyInline("color", value, true)) showToast(needTextHint);
-      }
-    }
-  );
+  const refreshDefaultsUi = () => {
+    if (defaultSizeItem) defaultSizeItem.textContent = `Mặc định (${docSize} px)`;
+    defaultFontOption.textContent = `Mặc định (${defaultFontName()})`;
+    updateToolbarState();
+    if (!selectionInEditor()) setSizeValue("");
+  };
 
-  const gradientBtn = el("button", iconToolClass);
-  gradientBtn.type = "button";
-  gradientBtn.title = "Màu gradient như logo Mixer (bôi đen chữ, hoặc đặt con trỏ trong tiêu đề)";
-  gradientBtn.setAttribute("aria-label", "Màu gradient như logo Mixer");
-  const gradientDot = el("span", "size-4 rounded-full");
-  gradientDot.style.backgroundImage = GRADIENT_CSS;
-  gradientBtn.append(gradientDot);
+  // Không bôi đen chữ: đổi cỡ chữ / phông chữ mặc định, dùng chung cho thẻ chữ và tệp.
+  const setDocDefaults = ({ size, font }) => {
+    if (size !== undefined) docSize = cleanSize(size) ?? DEFAULT_DOC_SIZE;
+    if (font !== undefined) docFont = cleanFont(font) ?? DEFAULT_DOC_FONT;
+
+    applyDocDefaults();
+    persist(slots);
+    refreshDefaultsUi();
+    showToast(
+      `Chữ mặc định: ${docSize} px · ${defaultFontName()} (áp dụng cho thẻ chữ và tệp)`
+    );
+  };
 
   const headingBtns = [1, 2, 3, 4].map(level =>
     makeToolBtn(`heading-${level}`, `Tiêu đề cấp ${level}`)
@@ -2326,7 +2458,7 @@ function init({ phonetics: phoneticsData }) {
 
   const indentBtn = makeToolBtn("indent-increase", "Thụt đầu dòng (lùi từ đầu tiên vào)");
   const quoteBtn = makeToolBtn("quote", "Trích dẫn (căn giữa, in nghiêng; có thể ghi tên tác giả)");
-  const citeBtn = makeToolBtn("pen-line", "Thêm tác giả / chú thích dưới trích dẫn");
+  const citeBtn = makeToolBtn("pen-line", "Thêm tác giả / chú thích dưới trích dẫn (căn phải, có dấu — hai đầu)");
   const imageBtn = makeToolBtn("image", "Chèn ảnh (SVG/PNG từ CDN hoặc tệp)");
   const tableBtn = makeToolBtn("table", "Chèn bảng");
   const moveUpBtn = makeToolBtn("arrow-up", "Chuyển đoạn lên trên (Alt+↑)");
@@ -2375,6 +2507,7 @@ function init({ phonetics: phoneticsData }) {
 
   const SIDE_CLASS =
     "min-w-0 w-full max-h-[40vh] overflow-y-auto overflow-x-hidden " +
+    "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden " +
     "lg:max-h-[calc(100vh-2rem)] lg:sticky lg:top-4 lg:self-start " +
     `flex flex-col gap-2 p-3 rounded-2xl border-2 border-dashed ${DIVIDER}`;
 
@@ -2601,9 +2734,8 @@ function init({ phonetics: phoneticsData }) {
   );
   setShown(imgBar, false);
 
-  const tableAct = (text, title, fn) => bind(mkBtn(toolBtnClass + " rt-tool", title, ""), fn);
   const tableTool = (text, title, fn) => {
-    const btn = tableAct(text, title, fn);
+    const btn = bind(mkBtn(toolBtnClass + " rt-tool", title, ""), fn);
     btn.textContent = text;
     return btn;
   };
@@ -2657,7 +2789,8 @@ function init({ phonetics: phoneticsData }) {
       "flex flex-wrap items-center gap-x-3 gap-y-2",
       "",
       group(boldBtn, italicBtn, underlineBtn, plainBtn),
-      group(fontSelect, sizeWrap, textPipette.wrap, gradientBtn),
+      group(upperBtn, lowerBtn, splitBtn),
+      group(fontSelect, sizeWrap),
       group(...headingBtns),
       group(...alignBtns),
       group(bulletBtn, numberBtn),
@@ -2784,7 +2917,8 @@ function init({ phonetics: phoneticsData }) {
 
   const isDirty = () => {
     const saved = currentSaved();
-    if (saved) return !sameBlocks(saved.blocks, sentenceBlocks);
+    // Chuẩn hóa lại bản đã lưu để màu liên kết theo thẻ chữ không bị tính là thay đổi.
+    if (saved) return !sameBlocks(cleanBlocks(saved.blocks), sentenceBlocks);
     return Boolean(sentenceString().trim());
   };
 
@@ -2976,6 +3110,7 @@ function init({ phonetics: phoneticsData }) {
     dropCaret.style.transform = `translate3d(${rect.left - 1.5}px, ${rect.top}px, 0)`;
   };
 
+  // Chèn thẻ chữ vào tệp: chữ được liên kết (data-wid) với thẻ nên màu luôn đồng bộ.
   function insertWordIntoEditor(item, point, color) {
     let range = point ? rangeFromPoint(point.x, point.y) : null;
 
@@ -3000,13 +3135,141 @@ function init({ phonetics: phoneticsData }) {
       color === GRADIENT ? GRADIENT_STYLE : `color:${cleanColor(color) || "var(--text)"}`;
     const html =
       (needLead ? "&nbsp;" : "") +
-      `<span style="${style}"${color === GRADIENT ? ' data-gradient="1"' : ""}>` +
+      `<span data-wid="${escapeHtml(item.id)}" style="${style}"` +
+      `${color === GRADIENT ? ' data-gradient="1"' : ""}>` +
       `${escapeHtml(item.word)}</span>&nbsp;`;
 
     document.execCommand("styleWithCSS", false, true);
     document.execCommand("insertHTML", false, html);
     syncFromEditor();
   }
+
+  // ===== Đồng bộ màu giữa thẻ chữ và chữ trong tệp =====
+  const WORD_BOUNDARY = /[\s.,;:!?…"'“”‘’()\[\]{}\/\\]/;
+
+  const lastTextNode = root => {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node;
+    let last = null;
+    while ((node = walker.nextNode())) if (node.nodeValue) last = node;
+    return last;
+  };
+
+  // Tìm thẻ chữ có màu mà phần cuối của `before` trùng khớp (ưu tiên thẻ dài nhất).
+  const findColoredWord = before => {
+    const hay = before.normalize("NFC").toLowerCase();
+    if (hay.length !== before.length) return null;
+
+    const candidates = savedWords
+      .filter(w => cleanWordColor(w.color))
+      .map(w => ({ word: w, key: w.word.normalize("NFC").toLowerCase().trim() }))
+      .filter(c => c.key)
+      .sort((a, b) => b.key.length - a.key.length);
+
+    for (const { word, key } of candidates) {
+      if (!hay.endsWith(key)) continue;
+      const start = hay.length - key.length;
+      if (start === 0 || WORD_BOUNDARY.test(hay[start - 1])) return { word, start };
+    }
+    return null;
+  };
+
+  // Bọc chữ kết thúc tại `end` trong node (nếu khớp thẻ chữ có màu) bằng span liên kết data-wid.
+  // Trả về { tail, shift } để đặt lại con trỏ, hoặc null nếu không làm gì.
+  const colorWordEndingAt = (node, end) => {
+    const text = node.nodeValue;
+
+    while (end > 0 && WORD_BOUNDARY.test(text[end - 1])) end--;
+    if (end <= 0) return null;
+
+    if (node.parentElement?.closest("[data-wid]")) return null;
+    if (nodeColor(node)) return null; // chữ đã được tô màu thủ công
+
+    const hit = findColoredWord(text.slice(0, end));
+    if (!hit) return null;
+
+    const tail = node.splitText(end);
+    wrapTextRange(node, hit.start, end, makeLinkedSpan(hit.word.id, hit.word.color));
+
+    return { tail, shift: end };
+  };
+
+  // Khi thẻ chữ vừa được tô màu: liên kết (và tô màu) mọi chữ trùng khớp chưa có màu trong tệp,
+  // giống cách tệp tự tô màu khi gõ. Trả về true nếu DOM có thay đổi.
+  const linkTextToWord = word => {
+    const color = cleanWordColor(word.color);
+    const key = word.word.normalize("NFC").toLowerCase().trim();
+    if (!color || !key) return false;
+
+    const nodes = [];
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) nodes.push(node);
+
+    let changed = false;
+
+    nodes.forEach(textNode => {
+      const parent = textNode.parentElement;
+      if (!parent || parent.closest("[data-wid]") || nodeColor(textNode)) return;
+
+      const text = textNode.nodeValue;
+      const hay = text.normalize("NFC").toLowerCase();
+      if (hay.length !== text.length) return;
+
+      const hits = [];
+      for (let from = 0; ;) {
+        const i = hay.indexOf(key, from);
+        if (i < 0) break;
+
+        const e = i + key.length;
+        const okStart = i === 0 || WORD_BOUNDARY.test(hay[i - 1]);
+        const okEnd = e === hay.length || WORD_BOUNDARY.test(hay[e]);
+
+        if (okStart && okEnd) {
+          hits.push(i);
+          from = e;
+        } else {
+          from = i + 1;
+        }
+      }
+
+      for (let k = hits.length - 1; k >= 0; k--) {
+        wrapTextRange(textNode, hits[k], hits[k] + key.length, makeLinkedSpan(word.id, color));
+        changed = true;
+      }
+    });
+
+    return changed;
+  };
+
+  const autoColorTyped = ({ paragraph }) => {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return false;
+
+    if (paragraph) {
+      let prev = currentBlockEl()?.previousElementSibling;
+      if (prev && (prev.tagName === "UL" || prev.tagName === "OL")) prev = prev.lastElementChild;
+      if (!prev) return false;
+
+      const node = lastTextNode(prev);
+      return Boolean(node && colorWordEndingAt(node, node.nodeValue.length));
+    }
+
+    const node = sel.anchorNode;
+    if (!node || node.nodeType !== Node.TEXT_NODE || !editor.contains(node)) return false;
+
+    const offset = sel.anchorOffset;
+    const result = colorWordEndingAt(node, offset - 1); // bỏ ký tự ngăn cách vừa gõ
+    if (!result) return false;
+
+    // Đặt lại con trỏ ngay sau ký tự ngăn cách (nằm ngoài span màu).
+    const range = document.createRange();
+    range.setStart(result.tail, Math.max(0, offset - result.shift));
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    return true;
+  };
 
   editor.addEventListener("input", event => {
     if (event.isComposing) {
@@ -3016,7 +3279,12 @@ function init({ phonetics: phoneticsData }) {
       return;
     }
 
-    if (event.inputType === "insertParagraph") {
+    // Gõ xong một từ (dấu cách / dấu câu / Enter): tự tô màu nếu từ đó có thẻ chữ màu.
+    if (event.inputType === "insertText" && event.data && WORD_BOUNDARY.test(event.data)) {
+      autoColorTyped({ paragraph: false });
+    } else if (event.inputType === "insertParagraph") {
+      autoColorTyped({ paragraph: true });
+
       const block = currentBlockEl();
       if (block?.dataset.kind === "cite" && block.previousElementSibling?.dataset.kind === "cite") {
         delete block.dataset.kind;
@@ -3034,6 +3302,49 @@ function init({ phonetics: phoneticsData }) {
 
     syncFromEditor();
   });
+
+  // Gõ tiếp ở mép chữ liên kết (data-wid): đặt con trỏ vào một text node nằm NGOÀI span,
+  // để chữ mới không thừa hưởng màu / liên kết của từ đứng trước (hoặc sau).
+  const escapeLinkedEdge = () => {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return;
+
+    const base = sel.anchorNode;
+    if (!base || !editor.contains(base)) return;
+
+    const host = base.nodeType === Node.TEXT_NODE ? base.parentElement : base;
+    const span = host?.closest?.("[data-wid]");
+    if (!span || !editor.contains(span)) return;
+
+    const probe = document.createRange();
+    probe.selectNodeContents(span);
+    probe.setStart(base, sel.anchorOffset);
+    const atEnd = !probe.toString();
+
+    probe.selectNodeContents(span);
+    probe.setEnd(base, sel.anchorOffset);
+    const atStart = !probe.toString();
+
+    if (!atEnd && !atStart) return; // đang sửa giữa từ: giữ nguyên liên kết
+
+    const gap = document.createTextNode("\u200b");
+    if (atEnd) span.after(gap);
+    else span.before(gap);
+
+    const range = document.createRange();
+    range.setStart(gap, 1);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  };
+
+  editor.addEventListener("beforeinput", event => {
+    if (event.inputType === "insertText" || event.inputType === "insertParagraph") {
+      escapeLinkedEdge();
+    }
+  });
+
+  editor.addEventListener("compositionstart", escapeLinkedEdge);
 
   editor.addEventListener("compositionend", () => syncFromEditor());
 
@@ -3606,7 +3917,7 @@ function init({ phonetics: phoneticsData }) {
     return true;
   };
 
-  const normalizeEditor = () => {
+  function normalizeEditor() {
     const saved = captureSel();
     const imgIndex = selectedImg ? [...editor.querySelectorAll(IMG_SEL)].indexOf(selectedImg) : -1;
     selectedImg = null;
@@ -3621,7 +3932,12 @@ function init({ phonetics: phoneticsData }) {
     refreshSentenceUi();
     schedulePersist();
     updateToolbarState();
-  };
+  }
+
+  // Khi màu của thẻ chữ thay đổi: vẽ lại tệp để chữ liên kết đổi màu theo.
+  function syncLinkedColors() {
+    if (editor.querySelector("[data-wid]")) normalizeEditor();
+  }
 
   const MARK_COLOR = "#010203";
   const MARK_SIZE = "xxx-large";
@@ -3663,6 +3979,8 @@ function init({ phonetics: phoneticsData }) {
         parseCssColor(node.getAttribute("color") || "") === MARK_COLOR;
       if (!marked) return;
 
+      // Tô màu thủ công => gỡ liên kết màu với thẻ chữ.
+      node.removeAttribute("data-wid");
       node.removeAttribute("color");
       clearGradientText(node);
 
@@ -3935,6 +4253,313 @@ function init({ phonetics: phoneticsData }) {
     updateToolbarState();
   };
 
+  // Các text node nằm trong vùng bôi đen, kèm đoạn [start, end) được chọn.
+  const selectedTextSpans = range => {
+    const spans = [];
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+    let node;
+
+    while ((node = walker.nextNode())) {
+      if (!range.intersectsNode(node)) continue;
+
+      const start = node === range.startContainer ? range.startOffset : 0;
+      const end = node === range.endContainer ? range.endOffset : node.nodeValue.length;
+      if (end > start) spans.push({ node, start, end });
+    }
+
+    return spans;
+  };
+
+  const changeCase = mode => {
+    const sel = window.getSelection();
+
+    if (!selectionInEditor() || selectedImg || !sel.rangeCount || sel.isCollapsed) {
+      showToast("Hãy bôi đen chữ trong tệp để đổi kiểu chữ");
+      return;
+    }
+
+    const saved = captureSel();
+    const spans = selectedTextSpans(sel.getRangeAt(0));
+
+    spans.forEach(({ node, start, end }) => {
+      const text = node.nodeValue;
+      const part = text.slice(start, end);
+      const next = mode === "upper" ? part.toLocaleUpperCase("vi") : part.toLocaleLowerCase("vi");
+
+      if (next !== part) node.nodeValue = text.slice(0, start) + next + text.slice(end);
+    });
+
+    syncFromEditor();
+    restoreSel(saved);
+    updateToolbarState();
+  };
+
+  const nodeColor = node => {
+    let n = node.parentElement;
+
+    while (n && n !== editor) {
+      if (
+        n.dataset?.gradient === "1" ||
+        n.style?.backgroundClip === "text" ||
+        n.style?.webkitBackgroundClip === "text"
+      ) {
+        return GRADIENT;
+      }
+
+      const raw = n.style?.color;
+      if (raw && raw !== "transparent") {
+        const color = parseCssColor(raw);
+        if (color) return color;
+      }
+
+      n = n.parentElement;
+    }
+
+    return null;
+  };
+
+  const BLOCK_SEL = "p,h1,h2,h3,h4,li,td,div";
+
+  const blockOf = node => node.parentElement?.closest(BLOCK_SEL) ?? null;
+
+  const selectionWords = range => {
+    const words = [];
+    let cur = null;
+    let lastBlock = null;
+
+    const flushWord = () => {
+      if (cur) words.push(cur);
+      cur = null;
+    };
+
+    selectedTextSpans(range).forEach(({ node, start, end }) => {
+      const block = blockOf(node);
+      if (block !== lastBlock) flushWord();
+      lastBlock = block;
+
+      const color = nodeColor(node);
+      const text = node.nodeValue.slice(start, end).replace(/\u00a0/g, " ").replace(/\u200b/g, "");
+
+      for (const ch of text) {
+        if (/\s/.test(ch)) {
+          flushWord();
+        } else {
+          if (!cur) cur = { word: "", color };
+          cur.word += ch;
+        }
+      }
+    });
+
+    flushWord();
+
+    return words
+      .map(w => ({ word: w.word.slice(0, MAX_WORD_LEN), color: cleanWordColor(w.color) }))
+      .slice(0, MAX_IMPORT_WORDS);
+  };
+
+  // Liên kết (data-wid) chữ đang bôi đen với các thẻ chữ vừa tạo, để màu luôn đồng bộ.
+  // Quy tắc tách từ giống hệt selectionWords nên chỉ số từ khớp với `ids`.
+  const linkSelectionToWords = (saved, ids, merged) => {
+    restoreSel(saved);
+
+    const sel = window.getSelection();
+    if (!sel.rangeCount || sel.isCollapsed) return;
+
+    if (merged) {
+      // Giữ nguyên cả cụm: mỗi text node được bọc liền một mạch (kể cả dấu cách ở giữa),
+      // chỉ cắt khoảng trắng thừa ở hai đầu vùng bôi đen.
+      const word = savedWords.find(w => w.id === ids[0]);
+      const spans = selectedTextSpans(sel.getRangeAt(0)).map(sp => ({ ...sp, s: sp.start, e: sp.end }));
+      const blank = ch => /[\s\u200b]/.test(ch);
+
+      for (const sp of spans) {
+        const text = sp.node.nodeValue;
+        while (sp.s < sp.e && blank(text[sp.s])) sp.s++;
+        if (sp.e > sp.s) break;
+      }
+      for (let i = spans.length - 1; i >= 0; i--) {
+        const sp = spans[i];
+        const text = sp.node.nodeValue;
+        while (sp.e > sp.s && blank(text[sp.e - 1])) sp.e--;
+        if (sp.e > sp.s) break;
+      }
+
+      if (word) {
+        spans.forEach(sp => {
+          if (sp.e > sp.s) wrapTextRange(sp.node, sp.s, sp.e, makeLinkedSpan(word.id, word.color));
+        });
+      }
+
+      normalizeEditor();
+      return;
+    }
+
+    const plan = [];
+    let wordIdx = -1;
+    let inWord = false;
+    let lastBlock = null;
+
+    selectedTextSpans(sel.getRangeAt(0)).forEach(({ node, start, end }) => {
+      const block = blockOf(node);
+      if (block !== lastBlock) inWord = false;
+      lastBlock = block;
+
+      const text = node.nodeValue;
+      const segs = [];
+      let from = -1;
+      let seg = -1;
+
+      const close = at => {
+        if (from >= 0) segs.push({ s: from, e: at, idx: seg });
+        from = -1;
+      };
+
+      for (let i = start; i < end; i++) {
+        const ch = text[i];
+
+        if (ch === "\u200b") continue;
+
+        if (/\s/.test(ch)) {
+          close(i);
+          inWord = false;
+          continue;
+        }
+
+        if (!inWord) {
+          wordIdx++;
+          inWord = true;
+        }
+        if (from < 0) {
+          from = i;
+          seg = wordIdx;
+        }
+      }
+      close(end);
+
+      if (segs.length) plan.push({ node, segs });
+    });
+
+    plan.forEach(({ node, segs }) => {
+      for (let k = segs.length - 1; k >= 0; k--) {
+        const id = merged ? ids[0] : ids[segs[k].idx];
+        if (!id) continue;
+
+        const word = savedWords.find(w => w.id === id);
+        if (!word) continue;
+
+        wrapTextRange(node, segs[k].s, segs[k].e, makeLinkedSpan(id, word.color));
+      }
+    });
+
+    normalizeEditor();
+  };
+
+  const openSplitModal = () => {
+    const sel = window.getSelection();
+
+    if (!selectionInEditor() || selectedImg || !sel.rangeCount || sel.isCollapsed) {
+      showToast("Hãy bôi đen chữ trong tệp để tách thành thẻ chữ");
+      return;
+    }
+
+    const saved = captureSel();
+    const words = selectionWords(sel.getRangeAt(0));
+
+    if (!saved || !words.length) {
+      showToast("Vùng bôi đen không có chữ để tách");
+      return;
+    }
+
+    const perWord = el("input", "size-4 accent-[#3b82f6]");
+    perWord.type = "checkbox";
+    perWord.checked = false; // mặc định: giữ nguyên cả cụm đã bôi đen thành một thẻ
+
+    // Tạo thẻ chữ mới và liên kết chữ trong tệp với các thẻ đó (màu đồng bộ hai chiều).
+    const commit = collectionId => {
+      const col = collectionId ? collections.find(c => c.id === collectionId) : null;
+      const merged = !perWord.checked;
+
+      const items = merged
+        ? [{
+          word: words.map(w => w.word).join(" ").slice(0, MAX_WORD_LEN),
+          color: words[0].color
+        }]
+        : words;
+
+      const ids = items.map(item => {
+        const id = crypto.randomUUID();
+        savedWords.push({ id, word: item.word, parts: null, color: item.color });
+        if (col) col.wordIds.push(id);
+        return id;
+      });
+
+      closeModal();
+
+      linkSelectionToWords(saved, ids, merged);
+
+      persist(slots);
+      renderAll();
+      showToast(
+        `Đã tách ${items.length} thẻ chữ` +
+        (col ? ` vào “${col.name}”` : " vào danh sách từ") +
+        " (chữ trong tệp được liên kết màu với thẻ)"
+      );
+    };
+
+    const destBtn = (icon, label, count, onClick, highlight = false) => {
+      const button = mkBtn(
+        `${toolBtnClass} w-full justify-start h-10` +
+        (highlight ? " bg-[color-mix(in_srgb,var(--text)_10%,transparent)]" : ""),
+        label,
+        `<i data-lucide="${icon}" class="size-4 shrink-0"></i>`
+      );
+      button.append(
+        el("span", "min-w-0 flex-1 truncate text-left", label),
+        el("span", "shrink-0 text-xs text-muted", count)
+      );
+      button.onclick = event => {
+        event.stopPropagation();
+        onClick();
+      };
+      return button;
+    };
+
+    openModal(
+      `Tách ${words.length} từ thành thẻ chữ`,
+      body =>
+        body.replaceChildren(
+          el(
+            "p",
+            "mb-2 text-xs text-muted",
+            "Chữ đang bôi đen sẽ được giữ nguyên trong tệp, đồng thời tạo thành thẻ chữ và liên kết màu với thẻ. Chọn nơi đặt các thẻ:"
+          ),
+          el(
+            "div",
+            "flex flex-col gap-2",
+            "",
+            destBtn("list", "Danh sách từ", `${listedWords().length} từ`, () => commit(null)),
+            ...collections.map(col =>
+              destBtn(
+                col.id === markedCollectionId ? "pin" : "folder",
+                col.name,
+                `${col.wordIds.length} từ`,
+                () => commit(col.id),
+                col.id === markedCollectionId
+              )
+            )
+          )
+        ),
+      "split",
+      el(
+        "label",
+        "flex items-center gap-2 text-sm",
+        "",
+        perWord,
+        el("span", "", "Cắt nhỏ: mỗi từ một thẻ riêng (mặc định giữ nguyên cả cụm)")
+      )
+    );
+  };
+
   const formatButtons = [
     { btn: boldBtn, run: () => runCommand("bold"), active: () => document.queryCommandState("bold") },
     { btn: italicBtn, run: () => runCommand("italic"), active: () => document.queryCommandState("italic") },
@@ -3959,14 +4584,9 @@ function init({ phonetics: phoneticsData }) {
         applyInline("font", null);
       }
     },
-    {
-      btn: gradientBtn,
-      run: () => {
-        if (!applyInline("color", GRADIENT)) {
-          showToast("Hãy bôi đen chữ (hoặc đặt con trỏ trong tiêu đề) để áp dụng gradient");
-        }
-      }
-    },
+    { btn: upperBtn, run: () => changeCase("upper") },
+    { btn: lowerBtn, run: () => changeCase("lower") },
+    { btn: splitBtn, run: openSplitModal },
     ...headingBtns.map((btn, i) => ({
       btn,
       run: () => toggleHeading(i + 1),
@@ -4047,8 +4667,7 @@ function init({ phonetics: phoneticsData }) {
 
   fontSelect.addEventListener("change", () => {
     if (!applyInline("font", fontSelect.value || null, true)) {
-      showToast(needTextHint);
-      updateToolbarState();
+      setDocDefaults({ font: fontSelect.value });
     }
   });
 
@@ -4616,7 +5235,7 @@ function init({ phonetics: phoneticsData }) {
           return ghost;
         },
         onPick: () => { suppressClick = true; },
-        onEnd: () => setTimeout(() => { suppressClick = false; }, 60),
+        onEnd: releaseClick,
         onDrop: node => setWordColor(node.dataset.word, color)
       });
     });
@@ -4684,7 +5303,7 @@ function init({ phonetics: phoneticsData }) {
     el(
       "span",
       "ml-1 text-xs text-muted",
-      "Kéo màu vào thẻ chữ trong bộ sưu tập · hoặc bôi đen chữ / chọn ảnh trong tệp rồi bấm màu"
+      "Kéo màu vào bất kỳ thẻ chữ nào · hoặc bôi đen chữ / chọn ảnh trong tệp rồi bấm màu"
     )
   );
 
@@ -4710,8 +5329,10 @@ function init({ phonetics: phoneticsData }) {
     "aside",
     "hidden lg:flex flex-col gap-2 fixed left-4 top-4 z-40 w-60 " +
     "max-h-[calc(100vh-2rem)] overflow-y-auto overflow-x-hidden p-3 rounded-2xl " +
+    "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden " +
     `bg-bg text-text border-2 border-dashed ${DIVIDER}`
   );
+
   wordsAside.dataset.wordlist = "1";
   wordsAside.addEventListener("click", event => event.stopPropagation());
   setShown(wordsAside, false);
@@ -4734,13 +5355,24 @@ function init({ phonetics: phoneticsData }) {
     const body = el("div", "flex flex-wrap gap-2");
     body.append(...words.map(item => buildWordCard(item, null, true)));
 
+    const clearAside = mkBtn(
+      `${iconBtn} text-muted hover:text-red-500`,
+      "Xóa nhanh tất cả từ trong danh sách từ",
+      '<i data-lucide="trash-2" class="size-4"></i>'
+    );
+    clearAside.onclick = event => {
+      event.stopPropagation();
+      clearListedWords();
+    };
+
     wordsAside.replaceChildren(
       el(
         "div",
         "flex items-center gap-1",
         "",
         el("span", "min-w-0 flex-1 truncate text-sm font-semibold", "Danh sách từ"),
-        el("span", "shrink-0 text-xs text-muted", `${words.length} từ`)
+        el("span", "shrink-0 text-xs text-muted", `${words.length} từ`),
+        clearAside
       ),
       body
     );
@@ -4822,13 +5454,17 @@ function init({ phonetics: phoneticsData }) {
     renderAll();
   };
 
+  // Đổi màu thẻ chữ => chữ liên kết trong tệp tự đổi theo; chữ trùng khớp chưa có màu cũng được liên kết.
   const setWordColor = (wordId, color) => {
     const word = savedWords.find(w => w.id === wordId);
     if (!word) return;
 
     word.color = color || null;
+    if (word.color) linkTextToWord(word);
+
     persist(slots);
     renderAll();
+    syncLinkedColors();
     showToast(color ? `Đã đổi màu “${word.word}”` : `Đã xóa màu “${word.word}”`);
   };
 

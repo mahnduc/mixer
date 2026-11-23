@@ -4,7 +4,6 @@
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
 
-  /* Light Theme - Giữ nguyên */
   --bg: #f6f3ee;
   --card: #fcfaf7;
   --text: #2a2926;
@@ -18,7 +17,6 @@
   --empty: #b9b2a5;
 }
 
-/* Dark Theme - Hệ màu mới */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
@@ -28,24 +26,15 @@
     --text: #e6e3dc;
     --muted: #a5a29a;
     --line: #383c43;
-
-    /* Nguyên âm */
     --vow: #e6a080;
     --vow-t: #302019;
-
-    /* Phụ âm */
     --con: #83b9d2;
     --con-t: #172832;
-
-    /* Highlight */
     --hl: #51472b;
-
-    /* Ô trống */
     --empty: #555a63;
   }
 }
 
-/* Dark Theme - Manual */
 :root[data-theme="dark"] {
   color-scheme: dark;
 
@@ -65,12 +54,10 @@
   --empty: #555a63;
 }
 
-/* Light Theme - Manual */
 :root[data-theme="light"] {
   color-scheme: light;
 }
 
-/* Selection */
 :root {
   user-select: none;
   -webkit-user-select: none;

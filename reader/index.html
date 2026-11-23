@@ -1,0 +1,1916 @@
+<!doctype html>
+<html lang="vi">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Trình xem tệp</title>
+  <meta name="description" content="Mixer made by Mạnh Đức.">
+  <meta name="author" content="mahnduc">
+  <meta name="theme-color" content="#f6f3ee" id="themeColor">
+  <link rel="canonical" href="https://mahnduc.github.io/mixer/">
+  <link rel="icon" type="image/svg+xml" href="https://api.iconify.design/boxicons/dino.svg?color=%23b8573a">
+
+  <script>
+    (() => {
+      try {
+        const savedTheme = localStorage.getItem("mixer-theme");
+        if (savedTheme === "light" || savedTheme === "dark") {
+          document.documentElement.dataset.theme = savedTheme;
+        }
+      } catch (error) {
+        console.warn("Không thể đọc thiết lập giao diện:", error);
+      }
+    })();
+  </script>
+
+  <link rel="stylesheet" href="../theme.css">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+  <script src="https://code.iconify.design/iconify-icon/3.0.0/iconify-icon.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: Object.fromEntries(
+            ["bg", "text", "muted", "con", "con-t", "vow", "vow-t", "hl"]
+              .map(k => [k, `var(--${k})`])
+          )
+        }
+      }
+    };
+  </script>
+
+  <style>
+    :root {
+      --accent: #2563eb;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --accent: #6aa7ff;
+      }
+    }
+
+    :root[data-theme="dark"] {
+      --accent: #6aa7ff;
+    }
+
+    ::selection {
+      background: color-mix(in srgb, var(--accent) 32%, transparent);
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    #aboutPopup {
+      animation: aboutFadeIn .2s ease-out;
+    }
+
+    #aboutSheet {
+      animation: aboutScaleIn .25s cubic-bezier(.2, .8, .2, 1);
+    }
+
+    @keyframes aboutFadeIn {
+      from {
+        opacity: 0;
+      }
+
+      to {
+        opacity: 1;
+      }
+    }
+
+    @keyframes aboutScaleIn {
+      from {
+        opacity: 0;
+        transform: scale(.94) translateY(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
+    }
+
+    .about-dino-wrap {
+      position: relative;
+      display: flex;
+      flex: 0 0 42%;
+      min-width: 0;
+      min-height: 340px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .about-dino-bg {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 280px;
+      height: 280px;
+      transform: translate(-50%, -50%);
+      background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 45%, #b8573a 100%);
+      -webkit-mask: url("https://api.iconify.design/boxicons/dino.svg") center/contain no-repeat;
+      mask: url("https://api.iconify.design/boxicons/dino.svg") center/contain no-repeat;
+      opacity: .28;
+      pointer-events: none;
+    }
+
+    .about-gradient {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      background:
+        radial-gradient(circle at 25% 50%, color-mix(in srgb, var(--con) 15%, transparent), transparent 65%),
+        radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--vow) 12%, transparent), transparent 50%);
+      pointer-events: none;
+    }
+
+    #themeToggle {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #themeToggle iconify-icon {
+      color: var(--vow);
+      transition: transform .2s ease, color .2s ease;
+    }
+
+    #themeToggle:hover iconify-icon {
+      color: var(--con);
+      transform: scale(1.15);
+    }
+
+    #themeToggle:active iconify-icon {
+      transform: scale(.9);
+    }
+
+    @media(max-width:640px) {
+      .about-split {
+        flex-direction: column;
+      }
+
+      .about-dino-wrap {
+        flex: none;
+        width: 100%;
+        min-height: 150px;
+      }
+
+      .about-dino-bg {
+        width: 150px;
+        height: 150px;
+      }
+    }
+
+    @media(max-width:480px) {
+      #aboutSheet {
+        max-width: 100%;
+        min-height: 280px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+
+      #aboutPopup,
+      #aboutSheet,
+      .doc .flash {
+        animation: none;
+      }
+
+      #themeToggle iconify-icon {
+        transition: none;
+      }
+    }
+
+    ::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: color-mix(in srgb, var(--text) 28%, transparent);
+      background-clip: content-box;
+      border: 2px solid transparent;
+      border-radius: 999px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: color-mix(in srgb, var(--accent) 70%, transparent);
+      background-clip: content-box;
+    }
+
+    ::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+
+    @supports not selector(::-webkit-scrollbar) {
+      * {
+        scrollbar-width: thin;
+        scrollbar-color: color-mix(in srgb, var(--text) 28%, transparent) transparent;
+      }
+    }
+
+    main {
+      max-width: 1440px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 0 1.25rem 4rem;
+    }
+
+    .workspace {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      align-items: stretch;
+    }
+
+    .doc-column {
+      flex: 1 1 auto;
+      min-width: 0;
+      max-width: 860px;
+      width: 100%;
+      margin: 0 auto;
+      padding-top: .5rem;
+    }
+
+    .btn {
+      height: 2.25rem;
+      padding: 0 .9rem;
+      border: 1px solid color-mix(in srgb, var(--text) 16%, transparent);
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--bg) 88%, transparent);
+      color: var(--text);
+      font: 600 .875rem system-ui, sans-serif;
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      cursor: pointer;
+      max-width: 100%;
+    }
+
+    .btn:hover {
+      background: color-mix(in srgb, var(--text) 12%, transparent);
+    }
+
+    .btn[aria-pressed="true"] {
+      border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+      background: color-mix(in srgb, var(--accent) 14%, transparent);
+    }
+
+    #aboutHint {
+      margin-top: 1rem;
+      padding: 1.5rem 1rem;
+      text-align: center;
+      color: var(--muted);
+      border: 2px dashed color-mix(in srgb, var(--text) 18%, transparent);
+      border-radius: 1rem;
+      font-size: .9rem;
+      transition: border-color .15s ease, background-color .15s ease, color .15s ease;
+    }
+
+    #aboutSheet.over #aboutHint {
+      border-color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 8%, transparent);
+      color: var(--text);
+    }
+
+    .rail {
+      order: -2;
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      display: flex;
+      flex-direction: column;
+      gap: .5rem;
+      margin: 0 -1.25rem;
+      padding: max(.75rem, env(safe-area-inset-top)) 1.25rem .5rem;
+      background: color-mix(in srgb, var(--bg) 88%, transparent);
+      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(12px);
+    }
+
+    .rail-brand {
+      display: flex;
+      align-items: center;
+      min-height: 2.5rem;
+    }
+
+    .panel {
+      border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+      border-radius: 1.1rem;
+      background: color-mix(in srgb, var(--bg) 93%, var(--text) 4%);
+      padding: .6rem;
+      text-align: left;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      padding: .3rem .5rem .45rem;
+      font-size: .85rem;
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    .panel-head iconify-icon {
+      flex: none;
+      width: 1rem;
+      height: 1rem;
+    }
+
+    .count {
+      margin-left: auto;
+      min-width: 1.4rem;
+      padding: 0 .4rem;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--text) 9%, transparent);
+      font-size: .72rem;
+      font-weight: 700;
+      line-height: 1.4rem;
+      text-align: center;
+    }
+
+    .marks {
+      padding: 0;
+      border: 0;
+      background: none;
+    }
+
+    .marks .panel-head {
+      display: none;
+    }
+
+    .marks .panel-head iconify-icon {
+      color: var(--accent);
+    }
+
+    .marks-list {
+      list-style: none;
+      margin: 0;
+      padding: 0 0 .25rem;
+      display: flex;
+      gap: .4rem;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .marks-list::-webkit-scrollbar {
+      display: none;
+    }
+
+    .mark-row {
+      display: flex;
+      align-items: center;
+      flex: 0 0 auto;
+      max-width: 70vw;
+      border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
+      border-radius: 999px;
+    }
+
+    .mark-link {
+      display: flex;
+      align-items: center;
+      gap: .45rem;
+      flex: 1;
+      min-width: 0;
+      padding: .35rem .3rem .35rem .75rem;
+      border: 0;
+      background: none;
+      color: var(--text);
+      font-size: .875rem;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .mark-link iconify-icon {
+      flex: none;
+      color: var(--accent);
+    }
+
+    .mark-link span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .mark-row.active {
+      border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+      background: color-mix(in srgb, var(--accent) 13%, transparent);
+    }
+
+    .mark-row.active .mark-link {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .mark-remove {
+      display: flex;
+      flex: none;
+      align-items: center;
+      justify-content: center;
+      width: 1.9rem;
+      height: 1.9rem;
+      border: 0;
+      border-radius: 50%;
+      background: none;
+      color: var(--muted);
+      cursor: pointer;
+    }
+
+    .mark-remove:hover {
+      color: var(--text);
+      background: color-mix(in srgb, var(--text) 10%, transparent);
+    }
+
+    .toc {
+      order: -1;
+      padding: .35rem .5rem .6rem;
+      text-align: left;
+    }
+
+    .toc-fold {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      width: 100%;
+      padding: .35rem .4rem;
+      border: 0;
+      border-radius: .6rem;
+      background: none;
+      color: var(--muted);
+      font-size: .85rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .toc-fold iconify-icon {
+      flex: none;
+      width: 1rem;
+      height: 1rem;
+    }
+
+    .toc-chevron {
+      transition: transform .2s ease;
+    }
+
+    .toc.folded .toc-chevron {
+      transform: rotate(-90deg);
+    }
+
+    .toc.folded .toc-list {
+      display: none;
+    }
+
+    .toc-list {
+      list-style: none;
+      margin: .3rem 0 0 .65rem;
+      padding: 0 0 0 .6rem;
+      border-left: 2px solid color-mix(in srgb, var(--text) 12%, transparent);
+      display: flex;
+      flex-direction: column;
+      gap: .1rem;
+    }
+
+    .toc-item {
+      position: relative;
+    }
+
+    .toc-item.active::before {
+      content: "";
+      position: absolute;
+      left: calc(-.6rem - 2px);
+      top: .25rem;
+      bottom: .25rem;
+      width: 2px;
+      border-radius: 2px;
+      background: var(--accent);
+    }
+
+    .toc-link {
+      display: block;
+      padding: .3rem .55rem;
+      border-radius: .55rem;
+      font-size: .85rem;
+      line-height: 1.4;
+      color: var(--muted);
+      text-decoration: none;
+      overflow-wrap: anywhere;
+      transition: background-color .15s ease, color .15s ease;
+    }
+
+    .toc-item[data-level="1"] .toc-link {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .toc-item[data-level="2"] .toc-link {
+      padding-left: 1.1rem;
+    }
+
+    .toc-item[data-level="3"] .toc-link {
+      padding-left: 1.65rem;
+      font-size: .82rem;
+    }
+
+    .toc-item[data-level="4"] .toc-link {
+      padding-left: 2.2rem;
+      font-size: .8rem;
+    }
+
+    .toc-link:hover {
+      background: color-mix(in srgb, var(--text) 8%, transparent);
+      color: var(--text);
+    }
+
+    .toc-item.active .toc-link {
+      background: color-mix(in srgb, var(--accent) 11%, transparent);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    @media (min-width: 1024px) {
+      main {
+        padding-top: 1.5rem;
+      }
+
+      .workspace {
+        flex-direction: row;
+        align-items: flex-start;
+        gap: 1.75rem;
+      }
+
+      .doc-column {
+        order: 1;
+        padding-top: 0;
+      }
+
+      .rail,
+      .toc {
+        position: sticky;
+        top: calc(1.25rem + env(safe-area-inset-top));
+        width: 15rem;
+        flex: 0 0 15rem;
+        max-height: calc(100svh - 2.5rem - env(safe-area-inset-top));
+        overflow-y: auto;
+        overscroll-behavior: contain;
+      }
+
+      .rail {
+        order: 0;
+        z-index: auto;
+        margin: 0;
+        padding: 0;
+        gap: .9rem;
+        background: none;
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+      }
+
+      .toc {
+        order: 2;
+        padding: .6rem;
+      }
+
+      .marks {
+        padding: .6rem;
+        border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+        background: color-mix(in srgb, var(--bg) 93%, var(--text) 4%);
+      }
+
+      .marks .panel-head {
+        display: flex;
+      }
+
+      .marks-list {
+        flex-direction: column;
+        gap: .15rem;
+        overflow: visible;
+        padding: 0;
+      }
+
+      .mark-row {
+        max-width: none;
+        border: 0;
+        border-radius: .65rem;
+      }
+
+      .mark-row:hover {
+        background: color-mix(in srgb, var(--text) 7%, transparent);
+      }
+
+      .mark-row.active {
+        background: color-mix(in srgb, var(--accent) 13%, transparent);
+      }
+
+      .mark-link {
+        padding-left: .6rem;
+      }
+
+      .toc-fold {
+        pointer-events: none;
+        cursor: default;
+      }
+
+      .toc-chevron {
+        display: none;
+      }
+
+      .toc.folded .toc-list {
+        display: flex;
+      }
+    }
+
+    .file-list-wrap {
+      margin-top: .9rem;
+    }
+
+    .file-list-title {
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+      padding: 0 .25rem .35rem;
+      color: var(--muted);
+      font-size: .8rem;
+      font-weight: 700;
+    }
+
+    .file-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      max-height: 11.5rem;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: .15rem;
+    }
+
+    .file-item {
+      display: flex;
+      align-items: center;
+      border-radius: .75rem;
+    }
+
+    .file-item:hover {
+      background: color-mix(in srgb, var(--text) 7%, transparent);
+    }
+
+    .file-item.active {
+      background: color-mix(in srgb, var(--accent) 12%, transparent);
+    }
+
+    .file-open {
+      flex: 1;
+      min-width: 0;
+      padding: .5rem .65rem;
+      border: 0;
+      background: none;
+      color: var(--text);
+      font-size: .875rem;
+      text-align: left;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+
+    .file-item.active .file-open {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .mark-btn {
+      display: flex;
+      flex: none;
+      align-items: center;
+      justify-content: center;
+      width: 2.1rem;
+      height: 2.1rem;
+      border: 0;
+      border-radius: 50%;
+      background: none;
+      color: var(--muted);
+      cursor: pointer;
+      transition: color .15s ease, transform .15s ease;
+    }
+
+    .mark-btn:hover {
+      color: var(--accent);
+      transform: scale(1.12);
+    }
+
+    .mark-btn[aria-pressed="true"] {
+      color: var(--accent);
+    }
+
+    .mark-btn iconify-icon {
+      width: 1.15rem;
+      height: 1.15rem;
+    }
+
+    .doc {
+      font-size: var(--doc-size, 18px);
+      font-family: var(--doc-font, Arial, Helvetica, sans-serif);
+      line-height: 1.6;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      text-align: left;
+    }
+
+    .doc p,
+    .doc h1,
+    .doc h2,
+    .doc h3,
+    .doc h4 {
+      margin: 0;
+    }
+
+    .doc h1,
+    .doc h2,
+    .doc h3,
+    .doc h4 {
+      scroll-margin-top: 6rem;
+    }
+
+    @media (min-width: 1024px) {
+
+      .doc h1,
+      .doc h2,
+      .doc h3,
+      .doc h4 {
+        scroll-margin-top: 1.5rem;
+      }
+    }
+
+    .doc p.e::before {
+      content: "\200b";
+    }
+
+    .doc h1 {
+      font-size: 2.25rem;
+      line-height: 1.2;
+      margin: .4em 0 .2em;
+    }
+
+    .doc h2 {
+      font-size: 1.875rem;
+      line-height: 1.25;
+      margin: .4em 0 .2em;
+    }
+
+    .doc h3 {
+      font-size: 1.5rem;
+      line-height: 1.3;
+      margin: .35em 0 .15em;
+    }
+
+    .doc h4 {
+      font-size: 1.25rem;
+      line-height: 1.35;
+      margin: .3em 0 .1em;
+    }
+
+    .doc ul {
+      list-style: disc;
+      padding-left: 1.75rem;
+      margin: .25em 0;
+    }
+
+    .doc ol {
+      list-style: decimal;
+      padding-left: 1.75rem;
+      margin: .25em 0;
+    }
+
+    .doc li.c,
+    .doc li.r {
+      list-style-position: inside;
+    }
+
+    .doc [data-indent] {
+      text-indent: 2em;
+    }
+
+    .doc [data-kind=quote] {
+      text-align: center;
+      font-style: italic;
+      font-size: 1.15em;
+      margin: .6em 1.5rem .2em;
+    }
+
+    .doc [data-kind=cite] {
+      text-align: right;
+      font-size: .9em;
+      opacity: .75;
+      margin: 0 1.5rem .6em;
+    }
+
+    .doc [data-kind=cite]::before {
+      content: "— ";
+    }
+
+    .doc [data-kind=cite]::after {
+      content: " —";
+    }
+
+    .doc table {
+      width: 100%;
+      table-layout: fixed;
+      border-collapse: collapse;
+      margin: .5em 0;
+      white-space: pre-wrap;
+    }
+
+    .doc td {
+      border: 1px solid color-mix(in srgb, var(--text) 16%, transparent);
+      padding: .35em .5em;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+    }
+
+    .doc table.h tr:first-child td {
+      font-weight: 700;
+      background: color-mix(in srgb, var(--text) 10%, transparent);
+    }
+
+    .doc figure {
+      margin: .5em 0;
+    }
+
+    .wrap {
+      position: relative;
+      display: inline-block;
+      max-width: 100%;
+      vertical-align: top;
+    }
+
+    .wrap img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .mask {
+      position: absolute;
+      inset: 0;
+      -webkit-mask: no-repeat center/contain;
+      mask: no-repeat center/contain;
+    }
+
+    .doc {
+      padding-left: 2.25rem;
+    }
+
+    .doc li {
+      --ml: 1.75rem;
+    }
+
+    .doc [data-kind] {
+      --ml: 1.5rem;
+    }
+
+    .mk-host {
+      position: relative;
+    }
+
+    .mk {
+      position: absolute;
+      left: calc(-2.25rem - var(--ml, 0px));
+      top: .1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.75rem;
+      height: 1.75rem;
+      padding: 0;
+      border: 0;
+      border-radius: .5rem;
+      background: none;
+      color: var(--muted);
+      opacity: .4;
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+      font-size: 16px;
+      line-height: 1;
+      text-indent: 0;
+      transition: opacity .15s ease, color .15s ease, background-color .15s ease;
+    }
+
+    .mk iconify-icon {
+      width: 1.2rem;
+      height: 1.2rem;
+    }
+
+    @media (hover: hover) {
+      .mk {
+        opacity: 0;
+      }
+
+      .mk-host:hover>.mk,
+      .mk:focus-visible {
+        opacity: 1;
+      }
+    }
+
+    .mk:hover {
+      color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 12%, transparent);
+    }
+
+    .mk[aria-pressed="true"] {
+      opacity: 1;
+      color: var(--accent);
+    }
+
+    .doc [data-marked] {
+      border-radius: .3rem;
+      background: color-mix(in srgb, var(--accent) 9%, transparent);
+      box-shadow: 0 0 0 .2rem color-mix(in srgb, var(--accent) 9%, transparent);
+    }
+
+    .doc .flash {
+      animation: spotFlash 1.1s ease-out;
+    }
+
+    @keyframes spotFlash {
+      from {
+        background: color-mix(in srgb, var(--accent) 38%, transparent);
+        box-shadow: 0 0 0 .2rem color-mix(in srgb, var(--accent) 38%, transparent);
+      }
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .25rem 1rem;
+      margin-top: 1.5rem;
+      padding-top: .75rem;
+      border-top: 1px solid color-mix(in srgb, var(--text) 15%, transparent);
+      font-size: .875rem;
+      text-align: left;
+    }
+
+    .legend b {
+      font-size: .75rem;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+    }
+
+    .legend i {
+      width: .8rem;
+      height: .8rem;
+      border-radius: 50%;
+    }
+  </style>
+</head>
+
+<body class="relative min-h-[100svh] flex flex-col bg-bg text-text font-sans">
+  <main>
+    <div class="workspace">
+      <aside class="rail" aria-label="Logo và tệp đã đánh dấu">
+        <div class="rail-brand">
+          <div class="inline-flex items-start">
+            <button id="aboutTrigger" type="button" aria-label="Thông tin và tùy chọn tệp Mixer" aria-haspopup="dialog"
+              aria-expanded="false"
+              class="flex items-center gap-2.5 text-3xl font-extrabold outline-none transition hover:opacity-80 active:scale-95">
+              <iconify-icon icon="boxicons:dino" class="size-8 text-con"></iconify-icon>
+              <span class="bg-gradient-to-r from-con to-vow bg-clip-text text-transparent">Mixer</span>
+            </button>
+
+            <button id="themeToggle" type="button" aria-label="Chuyển sang giao diện tối"
+              title="Chuyển giao diện sáng/tối"
+              class="-ml-1 -mt-1 flex size-5 shrink-0 items-center justify-center text-muted outline-none">
+              <iconify-icon id="themeIcon" icon="lucide:moon" class="size-4"></iconify-icon>
+            </button>
+          </div>
+        </div>
+
+        <nav id="marks" class="panel marks" aria-label="Tệp đã đánh dấu" hidden>
+          <div class="panel-head">
+            <iconify-icon icon="mdi:star"></iconify-icon>
+            <span>Tệp đã đánh dấu</span>
+            <span id="marksCount" class="count">0</span>
+          </div>
+          <ul id="marksList" class="marks-list"></ul>
+        </nav>
+
+        <nav id="spots" class="panel marks" aria-label="Vị trí đã đánh dấu trong tài liệu" hidden>
+          <div class="panel-head">
+            <iconify-icon icon="mdi:bookmark"></iconify-icon>
+            <span>Vị trí đánh dấu</span>
+            <span id="spotsCount" class="count">0</span>
+          </div>
+          <ul id="spotsList" class="marks-list"></ul>
+        </nav>
+      </aside>
+
+      <div class="doc-column">
+        <article id="doc" class="doc" hidden></article>
+        <div id="legend" class="legend" hidden></div>
+      </div>
+
+      <aside id="toc" class="panel toc" aria-label="Mục lục" hidden></aside>
+    </div>
+  </main>
+
+  <div id="aboutPopup"
+    class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-3 sm:p-5 backdrop-blur-md">
+    <section id="aboutSheet" role="dialog" aria-modal="true" aria-labelledby="aboutTitle"
+      class="relative isolate w-full max-w-2xl min-h-[400px] overflow-hidden rounded-[2rem] bg-bg shadow-[0_20px_60px_rgba(0,0,0,.35)]">
+      <div class="about-gradient"></div>
+
+      <button id="aboutClose" type="button" aria-label="Đóng"
+        class="absolute right-5 top-5 z-20 flex size-10 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--text)_8%,transparent)] text-muted transition hover:bg-[color-mix(in_srgb,var(--text)_15%,transparent)] hover:text-text active:scale-90">
+        <i data-lucide="x" class="size-5"></i>
+      </button>
+
+      <div class="about-split relative z-10 flex min-h-[400px] items-stretch gap-2 px-2 py-8 sm:px-4">
+        <div class="about-dino-wrap" aria-hidden="true">
+          <div class="about-dino-bg"></div>
+        </div>
+
+        <div id="aboutTitle" class="sr-only">Mở và xem tệp Mixer</div>
+
+        <div class="flex min-w-0 flex-1 flex-col justify-center pl-1 pr-5 sm:pl-2 sm:pr-8">
+          <div id="aboutViewerBar" class="flex flex-wrap items-center gap-2">
+            <label class="btn">Chọn tệp JSON<input id="file" type="file" accept=".json,application/json" hidden></label>
+            <button id="tocToggle" type="button" class="btn" aria-pressed="true" hidden>Mục lục</button>
+          </div>
+
+          <div id="fileListWrap" class="file-list-wrap" hidden>
+            <div class="file-list-title">
+              <iconify-icon icon="lucide:files"></iconify-icon>
+              <span>Danh sách tệp</span>
+            </div>
+            <ul id="fileList" class="file-list"></ul>
+          </div>
+
+          <div id="aboutHint">Chọn hoặc kéo thả tệp JSON xuất từ trình soạn thảo vào đây.</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    if (window.lucide) {
+      lucide.createIcons();
+    }
+
+    (() => {
+      const root = document.documentElement;
+      const toggle = document.getElementById("themeToggle");
+      const icon = document.getElementById("themeIcon");
+      const themeColor = document.getElementById("themeColor");
+
+      if (!toggle || !icon) return;
+
+      const STORAGE_KEY = "mixer-theme";
+      const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+
+      function getCurrentTheme() {
+        const manualTheme = root.dataset.theme;
+        if (manualTheme === "light" || manualTheme === "dark") {
+          return manualTheme;
+        }
+        return mediaQuery.matches ? "dark" : "light";
+      }
+
+      function updateThemeUI(theme) {
+        const isDark = theme === "dark";
+        icon.setAttribute("icon", isDark ? "lucide:sun" : "lucide:moon");
+        toggle.setAttribute("aria-label", isDark ? "Chuyển sang giao diện sáng" : "Chuyển sang giao diện tối");
+        toggle.setAttribute("title", isDark ? "Chuyển sang giao diện sáng" : "Chuyển sang giao diện tối");
+        if (themeColor) {
+          themeColor.setAttribute("content", isDark ? "#181a1d" : "#f6f3ee");
+        }
+      }
+
+      function setTheme(theme, save = true) {
+        if (theme !== "light" && theme !== "dark") return;
+        root.dataset.theme = theme;
+        if (save) {
+          try {
+            localStorage.setItem(STORAGE_KEY, theme);
+          } catch (error) {
+            console.warn("Không thể lưu giao diện:", error);
+          }
+        }
+        updateThemeUI(theme);
+      }
+
+      updateThemeUI(getCurrentTheme());
+
+      toggle.addEventListener("click", () => {
+        const nextTheme = getCurrentTheme() === "dark" ? "light" : "dark";
+        setTheme(nextTheme);
+      });
+
+      mediaQuery.addEventListener("change", () => {
+        if (!root.dataset.theme) {
+          updateThemeUI(getCurrentTheme());
+        }
+      });
+    })();
+
+    (() => {
+      const trigger = document.getElementById("aboutTrigger");
+      const popup = document.getElementById("aboutPopup");
+      const sheet = document.getElementById("aboutSheet");
+      const closeButton = document.getElementById("aboutClose");
+
+      if (!trigger || !popup || !sheet || !closeButton) return;
+
+      let previousOverflow = "";
+      let lastOpener = trigger;
+
+      function openAbout(opener = trigger) {
+        if (!popup.classList.contains("hidden")) return;
+        lastOpener = opener || trigger;
+        previousOverflow = document.body.style.overflow;
+        popup.classList.remove("hidden");
+        trigger.setAttribute("aria-expanded", "true");
+        document.body.style.overflow = "hidden";
+        closeButton.focus();
+      }
+
+      function closeAbout(restoreFocus = true) {
+        if (popup.classList.contains("hidden")) return;
+        popup.classList.add("hidden");
+        trigger.setAttribute("aria-expanded", "false");
+        document.body.style.overflow = previousOverflow;
+        sheet.classList.remove("over");
+        if (restoreFocus && lastOpener && typeof lastOpener.focus === "function") {
+          lastOpener.focus();
+        }
+      }
+
+      trigger.addEventListener("click", () => openAbout(trigger));
+      closeButton.addEventListener("click", () => closeAbout(true));
+
+      popup.addEventListener("click", event => {
+        if (event.target === popup) {
+          closeAbout(true);
+        }
+      });
+
+      sheet.addEventListener("click", event => {
+        event.stopPropagation();
+      });
+
+      document.addEventListener("keydown", event => {
+        if (event.key === "Escape" && !popup.classList.contains("hidden")) {
+          closeAbout(true);
+        }
+      });
+
+      const $ = id => document.getElementById(id);
+      const GR = "gradient";
+      const GRAD = "linear-gradient(to right, var(--con), var(--vow))";
+      const FONTS = {
+        arial: "Arial, Helvetica, sans-serif", verdana: "Verdana, Geneva, sans-serif",
+        tahoma: "Tahoma, Geneva, sans-serif", trebuchet: '"Trebuchet MS", Helvetica, sans-serif',
+        georgia: "Georgia, serif", times: '"Times New Roman", Times, serif',
+        courier: '"Courier New", Courier, monospace', comic: '"Comic Sans MS", "Comic Neue", cursive'
+      };
+      const ALIGNS = ["left", "center", "right", "justify"];
+      const MAX_SIZE = 2 * 1024 * 1024;
+      const TOC_PREF_KEY = "mixer-toc-visible";
+      const MARKS_KEY = "mixer-marks";
+      const SPOTS_KEY = "mixer-bookmarks";
+      const RESERVED_KEYS = new Set(["mixer-theme", TOC_PREF_KEY, MARKS_KEY, SPOTS_KEY]);
+      const narrow = window.matchMedia("(max-width:1023px)");
+
+      let tocEnabled = (() => {
+        try {
+          const saved = localStorage.getItem(TOC_PREF_KEY);
+          return saved === null ? true : saved === "true";
+        } catch {
+          return true;
+        }
+      })();
+
+      let marks = (() => {
+        try {
+          const saved = JSON.parse(localStorage.getItem(MARKS_KEY) || "[]");
+          return new Set(Array.isArray(saved) ? saved.filter(x => typeof x === "string") : []);
+        } catch {
+          return new Set();
+        }
+      })();
+
+      const spotStore = (() => {
+        const store = new Map();
+        try {
+          const saved = JSON.parse(localStorage.getItem(SPOTS_KEY) || "{}");
+          if (saved && typeof saved === "object" && !Array.isArray(saved)) {
+            Object.entries(saved).forEach(([id, list]) => {
+              if (Array.isArray(list)) store.set(id, new Set(list.filter(Number.isInteger)));
+            });
+          }
+        } catch { }
+        return store;
+      })();
+
+      const spotSet = id => {
+        if (!spotStore.has(id)) spotStore.set(id, new Set());
+        return spotStore.get(id);
+      };
+
+      function saveSpots() {
+        try {
+          const out = {};
+          spotStore.forEach((set, id) => {
+            if (id.startsWith("local:") && set.size) out[id] = [...set].sort((a, b) => a - b);
+          });
+          localStorage.setItem(SPOTS_KEY, JSON.stringify(out));
+        } catch (error) {
+          console.warn("Không thể lưu vị trí đánh dấu:", error);
+        }
+      }
+
+      const color = v => v === GR ? GR : typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : null;
+      const src = v => typeof v === "string" && v.length < 9e5 &&
+        /^(?:https:\/\/[^\s"'()<>\\]{1,2000}|data:image\/(?:png|jpe?g|gif|webp|svg\+xml);base64,[a-z0-9+/=]+)$/i.test(v) ? v : null;
+      const num = (v, a, b) => { v = Number(v); return Number.isFinite(v) && v >= a && v <= b ? Math.round(v) : null; };
+      const mk = (tag, cls) => { const n = document.createElement(tag); if (cls) n.className = cls; return n; };
+      const ico = (name, cls) => {
+        const n = document.createElement("iconify-icon");
+        n.setAttribute("icon", name);
+        if (cls) n.className = cls;
+        return n;
+      };
+      const textSpan = (text, cls) => { const s = mk("span", cls); s.textContent = text; return s; };
+
+      function paint(node, c) {
+        if (c === GR) {
+          node.style.backgroundImage = GRAD;
+          node.style.webkitBackgroundClip = node.style.backgroundClip = "text";
+          node.style.webkitTextFillColor = "transparent";
+          node.style.color = "transparent";
+        } else if (c) node.style.color = c;
+      }
+
+      function runs(list, parent) {
+        if (!Array.isArray(list)) return;
+        list.forEach(r => {
+          if (!r || typeof r.text !== "string") return;
+          const c = r.gradient === true ? GR : color(r.color);
+          const size = num(r.size, 8, 200);
+          const font = FONTS[r.font];
+          const styled = c || size || font || r.bold || r.italic || r.underline;
+
+          r.text.replace(/[\u200b\r]/g, "").replace(/\u00a0/g, " ").split("\n").forEach((part, i) => {
+            if (i) parent.append(mk("br"));
+            if (!part) return;
+            if (!styled) { parent.append(part); return; }
+
+            const s = mk("span");
+            s.textContent = part;
+            paint(s, c);
+            if (size) s.style.fontSize = size + "px";
+            if (font) s.style.fontFamily = font;
+            if (r.bold) s.style.fontWeight = "700";
+            if (r.italic) s.style.fontStyle = "italic";
+            if (r.underline) s.style.textDecoration = "underline";
+            parent.append(s);
+          });
+        });
+      }
+
+      function figure(b) {
+        const url = src(b.src);
+        if (!url) return null;
+
+        const fig = mk("figure");
+        if (b.align === "center" || b.align === "right") fig.style.textAlign = b.align;
+
+        const wrap = mk("span", "wrap");
+        wrap.style.width = (num(b.width, 24, 1200) ?? 160) + "px";
+
+        const img = new Image();
+        img.src = url;
+        img.alt = "Ảnh";
+        wrap.append(img);
+
+        const c = color(b.color);
+        if (c) {
+          img.style.visibility = "hidden";
+          const tint = mk("span", "mask");
+          tint.style.webkitMaskImage = tint.style.maskImage = `url("${url}")`;
+          if (c === GR) tint.style.backgroundImage = GRAD;
+          else tint.style.backgroundColor = c;
+          wrap.append(tint);
+        }
+
+        fig.append(wrap);
+        return fig;
+      }
+
+      let tocItems = [];
+      let activeToc = null;
+      let tocFolded = narrow.matches;
+
+      function updateSpy() {
+        if (!tocItems.length || $("toc").hidden) return;
+
+        let current = null;
+        for (const item of tocItems) {
+          if (item.el.getBoundingClientRect().top <= 140) current = item;
+          else break;
+        }
+        current = current || tocItems[0];
+        if (current === activeToc) return;
+
+        if (activeToc) activeToc.li.classList.remove("active");
+        current.li.classList.add("active");
+        activeToc = current;
+
+        const tocEl = $("toc");
+        if (!narrow.matches && tocEl.scrollHeight > tocEl.clientHeight) {
+          const target = current.li.offsetTop - tocEl.clientHeight / 2;
+          tocEl.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
+        }
+      }
+
+      function buildToc() {
+        const tocEl = $("toc");
+        const docEl = $("doc");
+        const toggleBtn = $("tocToggle");
+        tocEl.replaceChildren();
+        tocItems = [];
+        activeToc = null;
+
+        const headings = docEl.hidden ? [] : [...docEl.querySelectorAll("h1, h2, h3, h4")];
+        const items = headings
+          .map((h, idx) => {
+            const text = (h.textContent || "").replace(/[\u200b\s]+/g, " ").trim();
+            if (!text) return null;
+            const id = `mixer-sec-${idx + 1}`;
+            h.id = id;
+            return {
+              id,
+              el: h,
+              level: Number(h.tagName.slice(1)),
+              text
+            };
+          })
+          .filter(Boolean);
+
+        const hasHeadings = items.length > 0;
+        if (toggleBtn) {
+          toggleBtn.hidden = !hasHeadings;
+          toggleBtn.setAttribute("aria-pressed", String(tocEnabled));
+        }
+
+        if (!hasHeadings || !tocEnabled) {
+          tocEl.hidden = true;
+          return;
+        }
+
+        const fold = mk("button", "toc-fold");
+        fold.type = "button";
+        fold.setAttribute("aria-expanded", String(!tocFolded));
+        fold.append(
+          ico("lucide:list"),
+          textSpan("Mục lục"),
+          textSpan(String(items.length), "count"),
+          ico("lucide:chevron-down", "toc-chevron")
+        );
+        fold.addEventListener("click", () => {
+          tocFolded = !tocFolded;
+          tocEl.classList.toggle("folded", tocFolded);
+          fold.setAttribute("aria-expanded", String(!tocFolded));
+        });
+        tocEl.classList.toggle("folded", tocFolded);
+        tocEl.append(fold);
+
+        const list = mk("ul", "toc-list");
+        items.forEach(item => {
+          const li = mk("li", "toc-item");
+          li.dataset.level = String(item.level);
+
+          const link = document.createElement("a");
+          link.className = "toc-link";
+          link.href = `#${item.id}`;
+          link.textContent = item.text;
+          link.addEventListener("click", e => {
+            e.preventDefault();
+            const target = document.getElementById(item.id);
+            if (target) {
+              target.scrollIntoView({ behavior: "smooth", block: "start" });
+              closeAbout(false);
+            }
+          });
+
+          li.append(link);
+          list.append(li);
+          tocItems.push({ el: item.el, li });
+        });
+
+        tocEl.append(list);
+        tocEl.hidden = false;
+        updateSpy();
+      }
+
+      let spyTicking = false;
+      const requestSpy = () => {
+        if (spyTicking) return;
+        spyTicking = true;
+        requestAnimationFrame(() => {
+          spyTicking = false;
+          updateSpy();
+        });
+      };
+      addEventListener("scroll", requestSpy, { passive: true });
+      addEventListener("resize", requestSpy);
+
+      function spotText(on) {
+        return on ? "Bỏ đánh dấu đoạn này" : "Đánh dấu đoạn này";
+      }
+
+      function toggleSpot(id, i) {
+        const set = spotSet(id);
+        const on = !set.has(i);
+        if (on) set.add(i); else set.delete(i);
+        saveSpots();
+
+        const node = $("doc").querySelector(`[data-b="${i}"]`);
+        if (node) {
+          node.toggleAttribute("data-marked", on);
+          const btn = node.querySelector(":scope > .mk");
+          if (btn) {
+            btn.setAttribute("aria-pressed", String(on));
+            btn.setAttribute("aria-label", spotText(on));
+            btn.title = spotText(on);
+            btn.firstChild?.setAttribute("icon", on ? "mdi:bookmark" : "mdi:bookmark-outline");
+          }
+        }
+        renderSpots();
+      }
+
+      function spotLabel(node) {
+        if (node.tagName === "FIGURE") return "Ảnh";
+        if (node.classList.contains("tw")) return "Bảng";
+        return (node.textContent || "").replace(/[\u200b\s]+/g, " ").trim().slice(0, 48) || "(trống)";
+      }
+
+      function goToSpot(node) {
+        node.scrollIntoView({ behavior: "smooth", block: "center" });
+        node.classList.remove("flash");
+        void node.offsetWidth;
+        node.classList.add("flash");
+        setTimeout(() => node.classList.remove("flash"), 1200);
+      }
+
+      function renderSpots() {
+        const box = $("spots");
+        const list = $("spotsList");
+        list.replaceChildren();
+
+        const id = docs[activeDocIndex]?.id;
+        if (!id || $("doc").hidden) {
+          box.hidden = true;
+          return;
+        }
+
+        const set = spotSet(id);
+        const nodes = [...$("doc").querySelectorAll("[data-b]")].filter(n => set.has(Number(n.dataset.b)));
+        box.hidden = nodes.length === 0;
+        $("spotsCount").textContent = String(nodes.length);
+
+        nodes.forEach(node => {
+          const label = spotLabel(node);
+          const row = mk("li", "mark-row");
+
+          const link = mk("button", "mark-link");
+          link.type = "button";
+          link.title = label;
+          link.append(ico("mdi:bookmark"), textSpan(label));
+          link.addEventListener("click", () => goToSpot(node));
+
+          const remove = mk("button", "mark-remove");
+          remove.type = "button";
+          remove.setAttribute("aria-label", "Bỏ đánh dấu vị trí: " + label);
+          remove.title = "Bỏ đánh dấu";
+          remove.append(ico("lucide:x"));
+          remove.addEventListener("click", () => toggleSpot(id, Number(node.dataset.b)));
+
+          row.append(link, remove);
+          list.append(row);
+        });
+      }
+
+      function render(blocks) {
+        const root = $("doc");
+        root.replaceChildren();
+        const docId = docs[activeDocIndex]?.id;
+        let list = null;
+
+        const addMarker = (node, i) => {
+          if (!docId) return;
+          const on = spotSet(docId).has(i);
+          node.dataset.b = String(i);
+          node.classList.add("mk-host");
+          node.toggleAttribute("data-marked", on);
+
+          const btn = mk("button", "mk");
+          btn.type = "button";
+          btn.setAttribute("aria-pressed", String(on));
+          btn.setAttribute("aria-label", spotText(on));
+          btn.title = spotText(on);
+          btn.append(ico(on ? "mdi:bookmark" : "mdi:bookmark-outline"));
+          btn.addEventListener("click", e => {
+            e.preventDefault();
+            toggleSpot(docId, i);
+          });
+          node.prepend(btn);
+        };
+
+        (Array.isArray(blocks) ? blocks : []).forEach((b, i) => {
+          if (!b || typeof b !== "object") return;
+          const t = b.type;
+          const align = ALIGNS.includes(b.align) ? b.align : null;
+
+          if (t === "ul" || t === "ol") {
+            if (!list || list.tagName.toLowerCase() !== t) { list = mk(t); root.append(list); }
+            const li = mk("li", align === "center" ? "c" : align === "right" ? "r" : "");
+            if (align) li.style.textAlign = align;
+            runs(b.runs, li);
+            if (li.firstChild) addMarker(li, i);
+            list.append(li);
+            return;
+          }
+          list = null;
+
+          if (t === "img") {
+            const f = figure(b);
+            if (f) { addMarker(f, i); root.append(f); }
+            return;
+          }
+
+          if (t === "table") {
+            const table = mk("table", b.header === true ? "h" : "");
+            (Array.isArray(b.rows) ? b.rows : []).slice(0, 50).forEach(row => {
+              if (!Array.isArray(row)) return;
+              const tr = table.insertRow();
+              row.slice(0, 12).forEach(cell => runs(cell, tr.insertCell()));
+            });
+            const holder = mk("div", "tw");
+            holder.append(table);
+            addMarker(holder, i);
+            root.append(holder);
+            return;
+          }
+
+          const special = t === "quote" || t === "cite";
+          const node = mk(/^h[1-4]$/.test(t) ? t : "p");
+          if (special) node.dataset.kind = t;
+          if (t === "p" && b.indent === true) node.dataset.indent = "1";
+          if (align) node.style.textAlign = align;
+          runs(b.runs, node);
+          if (node.firstChild) addMarker(node, i);
+          else node.classList.add("e");
+          root.append(node);
+        });
+
+        buildToc();
+      }
+
+      function usedColors(blocks) {
+        const seen = new Set();
+        (blocks || []).forEach(b => {
+          if (!b) return;
+          if (b.type === "img") { const c = color(b.color); if (c) seen.add(c); return; }
+          const all = b.type === "table" && Array.isArray(b.rows) ? b.rows.flat(2) : b.runs;
+          (Array.isArray(all) ? all : []).forEach(r => {
+            const c = r && (r.gradient === true ? GR : color(r.color));
+            if (c) seen.add(c);
+          });
+        });
+        return [...seen];
+      }
+
+      function showLegend(blocks, legend) {
+        const box = $("legend");
+        box.replaceChildren();
+        const items = usedColors(blocks).filter(c => legend && typeof legend[c] === "string" && legend[c].trim());
+        box.hidden = !items.length;
+        if (!items.length) return;
+
+        box.append(Object.assign(mk("b"), { textContent: "Chú giải" }));
+        items.forEach(c => {
+          const dot = mk("i");
+          if (c === GR) dot.style.backgroundImage = GRAD; else dot.style.backgroundColor = c;
+          const item = mk("span");
+          item.append(dot, legend[c].trim().slice(0, 60));
+          box.append(item);
+        });
+      }
+
+      let docs = [];
+      let legend = {};
+      let activeDocIndex = -1;
+
+      const isLocal = d => d.id.startsWith("local:");
+
+      function saveMarks() {
+        try {
+          localStorage.setItem(MARKS_KEY, JSON.stringify([...marks]));
+        } catch (error) {
+          console.warn("Không thể lưu đánh dấu:", error);
+        }
+      }
+
+      function toggleMark(id) {
+        if (marks.has(id)) marks.delete(id);
+        else marks.add(id);
+        saveMarks();
+        renderLists();
+      }
+
+      function openDoc(i) {
+        if (!docs[i]) return;
+        show(i);
+        closeAbout(false);
+      }
+
+      function renderFileList() {
+        const list = $("fileList");
+        list.replaceChildren();
+        $("fileListWrap").hidden = docs.length === 0;
+
+        docs.forEach((d, i) => {
+          const li = mk("li", "file-item" + (i === activeDocIndex ? " active" : ""));
+
+          const open = mk("button", "file-open");
+          open.type = "button";
+          open.textContent = d.name;
+          open.title = d.name;
+          open.addEventListener("click", () => openDoc(i));
+          li.append(open);
+
+          if (isLocal(d)) {
+            const marked = marks.has(d.id);
+            const star = mk("button", "mark-btn");
+            star.type = "button";
+            star.setAttribute("aria-pressed", String(marked));
+            star.setAttribute("aria-label", marked ? "Bỏ đánh dấu tệp" : "Đánh dấu tệp");
+            star.title = marked ? "Bỏ đánh dấu" : "Đánh dấu để truy cập nhanh";
+            star.append(ico(marked ? "mdi:star" : "mdi:star-outline"));
+            star.addEventListener("click", e => {
+              e.stopPropagation();
+              toggleMark(d.id);
+            });
+            li.append(star);
+          }
+
+          list.append(li);
+        });
+      }
+
+      function renderMarks() {
+        const box = $("marks");
+        const list = $("marksList");
+        list.replaceChildren();
+
+        const indexes = [...marks]
+          .map(id => docs.findIndex(d => d.id === id))
+          .filter(i => i >= 0);
+
+        box.hidden = indexes.length === 0;
+        $("marksCount").textContent = String(indexes.length);
+
+        indexes.forEach(i => {
+          const d = docs[i];
+          const row = mk("li", "mark-row" + (i === activeDocIndex ? " active" : ""));
+
+          const link = mk("button", "mark-link");
+          link.type = "button";
+          link.title = d.label;
+          link.append(ico("mdi:star"), textSpan(d.label));
+          link.addEventListener("click", () => openDoc(i));
+
+          const remove = mk("button", "mark-remove");
+          remove.type = "button";
+          remove.setAttribute("aria-label", "Bỏ đánh dấu tệp " + d.label);
+          remove.title = "Bỏ đánh dấu";
+          remove.append(ico("lucide:x"));
+          remove.addEventListener("click", () => toggleMark(d.id));
+
+          row.append(link, remove);
+          list.append(row);
+        });
+      }
+
+      function renderLists() {
+        renderFileList();
+        renderMarks();
+      }
+
+      function show(i) {
+        const d = docs[i];
+        if (!d) return;
+        activeDocIndex = i;
+        $("doc").hidden = false;
+        render(d.blocks);
+        showLegend(d.blocks, legend);
+        renderLists();
+        renderSpots();
+        window.scrollTo({ top: 0 });
+      }
+
+      function extractBlocks(data) {
+        if (!data || typeof data !== "object") return null;
+        if (Array.isArray(data)) return data;
+        if (Array.isArray(data.blocks)) return data.blocks;
+        if (Array.isArray(data.document?.blocks)) return data.document.blocks;
+        if (typeof data.document === "string") {
+          try {
+            const parsedDoc = JSON.parse(data.document);
+            if (Array.isArray(parsedDoc)) return parsedDoc;
+            if (Array.isArray(parsedDoc?.blocks)) return parsedDoc.blocks;
+          } catch { }
+        }
+        return null;
+      }
+
+      function scanLocalStorage(targetDocs, targetLegend) {
+        try {
+          const seenKeys = new Set();
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (!key || RESERVED_KEYS.has(key) || seenKeys.has(key)) continue;
+            seenKeys.add(key);
+
+            const raw = localStorage.getItem(key);
+            if (!raw || raw.length > MAX_SIZE) continue;
+
+            let parsed;
+            try {
+              parsed = JSON.parse(raw);
+            } catch {
+              continue;
+            }
+
+            if (parsed && typeof parsed.colorLegend === "object" && parsed.colorLegend) {
+              Object.assign(targetLegend, parsed.colorLegend);
+            }
+
+            const mainBlocks = extractBlocks(parsed);
+            if (Array.isArray(mainBlocks) && mainBlocks.length) {
+              const label = String(parsed?.title || parsed?.name || key);
+              targetDocs.push({
+                id: `local:${key}`,
+                label,
+                name: `[Local] ${label}`,
+                blocks: mainBlocks
+              });
+            }
+
+            const savedList = Array.isArray(parsed?.savedSentences)
+              ? parsed.savedSentences
+              : Array.isArray(parsed?.documents)
+                ? parsed.documents
+                : Array.isArray(parsed?.items)
+                  ? parsed.items
+                  : [];
+
+            savedList.forEach((s, idx) => {
+              const sBlocks = extractBlocks(s);
+              if (Array.isArray(sBlocks) && sBlocks.length) {
+                const label = typeof s?.name === "string" && s.name ? s.name : key + " #" + (idx + 1);
+                targetDocs.push({
+                  id: `local:${key}#${idx}`,
+                  label,
+                  name: `[Local] ${label}`,
+                  blocks: sBlocks
+                });
+              }
+            });
+          }
+        } catch (err) {
+          console.warn("Không thể quét localStorage:", err);
+        }
+      }
+
+      function load(data) {
+        const nextDocs = [];
+        const nextLegend = data && typeof data.colorLegend === "object" && data.colorLegend ? { ...data.colorLegend } : {};
+
+        const main = extractBlocks(data);
+        if (Array.isArray(main) && main.length) {
+          const label = String(data?.title || data?.name || "Tài liệu hiện tại");
+          nextDocs.push({ id: "file:main", label, name: label, blocks: main });
+        }
+
+        (Array.isArray(data?.savedSentences) ? data.savedSentences : []).forEach((s, i) => {
+          const sBlocks = extractBlocks(s);
+          if (Array.isArray(sBlocks) && sBlocks.length) {
+            const label = typeof s?.name === "string" && s.name ? s.name : "Tệp " + (i + 1);
+            nextDocs.push({ id: `file:${i}`, label, name: label, blocks: sBlocks });
+          }
+        });
+
+        scanLocalStorage(nextDocs, nextLegend);
+
+        if (!nextDocs.length) throw new Error("empty");
+
+        [...spotStore.keys()].filter(k => k.startsWith("file:")).forEach(k => spotStore.delete(k));
+        docs = nextDocs;
+        legend = nextLegend;
+        show(0);
+      }
+
+      async function readFile(file) {
+        try {
+          if (file.size > MAX_SIZE) throw new Error("size");
+          const parsed = JSON.parse(await file.text());
+          load(parsed);
+          closeAbout(false);
+        } catch {
+          alert("Không đọc được tệp JSON hợp lệ của trình soạn thảo.");
+        }
+      }
+
+      (() => {
+        const localDocs = [];
+        const localLegend = {};
+        scanLocalStorage(localDocs, localLegend);
+        docs = localDocs;
+        legend = localLegend;
+        activeDocIndex = -1;
+        $("doc").hidden = true;
+        $("legend").hidden = true;
+        $("toc").hidden = true;
+        renderLists();
+        openAbout(trigger);
+      })();
+
+      $("tocToggle").onclick = () => {
+        tocEnabled = !tocEnabled;
+        try {
+          localStorage.setItem(TOC_PREF_KEY, String(tocEnabled));
+        } catch { }
+        buildToc();
+      };
+
+      $("file").onchange = e => {
+        const f = e.target.files?.[0];
+        e.target.value = "";
+        if (f) readFile(f);
+      };
+
+      sheet.addEventListener("dragover", e => {
+        e.preventDefault();
+        sheet.classList.add("over");
+      });
+      sheet.addEventListener("dragleave", e => {
+        if (!sheet.contains(e.relatedTarget)) {
+          sheet.classList.remove("over");
+        }
+      });
+      sheet.addEventListener("drop", e => {
+        e.preventDefault();
+        sheet.classList.remove("over");
+        const f = e.dataTransfer?.files?.[0];
+        if (f) readFile(f);
+      });
+
+      addEventListener("dragover", e => {
+        e.preventDefault();
+        if (popup.classList.contains("hidden")) {
+          openAbout(trigger);
+        }
+        sheet.classList.add("over");
+      });
+      addEventListener("dragleave", e => {
+        if (!e.relatedTarget) {
+          sheet.classList.remove("over");
+        }
+      });
+      addEventListener("drop", e => {
+        e.preventDefault();
+        sheet.classList.remove("over");
+        const f = e.dataTransfer?.files?.[0];
+        if (f) readFile(f);
+      });
+    })();
+  </script>
+</body>
+
+</html>

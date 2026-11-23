@@ -59,33 +59,27 @@
 
   <style>
     #aboutPopup {
-      animation: aboutFadeIn .2s ease-out;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .26s cubic-bezier(.22, 1, .36, 1);
+      will-change: opacity;
+    }
+
+    #aboutPopup.is-open {
+      opacity: 1;
+      pointer-events: auto;
     }
 
     #aboutSheet {
-      animation: aboutScaleIn .25s cubic-bezier(.2, .8, .2, 1);
+      opacity: 0;
+      transform: translate3d(0, 10px, 0) scale(.97);
+      transition: transform .32s cubic-bezier(.22, 1, .36, 1), opacity .24s cubic-bezier(.22, 1, .36, 1);
+      will-change: transform, opacity;
     }
 
-    @keyframes aboutFadeIn {
-      from {
-        opacity: 0;
-      }
-
-      to {
-        opacity: 1;
-      }
-    }
-
-    @keyframes aboutScaleIn {
-      from {
-        opacity: 0;
-        transform: scale(.94) translateY(10px);
-      }
-
-      to {
-        opacity: 1;
-        transform: scale(1) translateY(0);
-      }
+    #aboutPopup.is-open #aboutSheet {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
     }
 
     .about-dino-wrap {
@@ -124,67 +118,19 @@
 
     #themeToggle {
       -webkit-tap-highlight-color: transparent;
-      position: relative;
-      isolation: isolate;
     }
 
     #themeToggle iconify-icon {
       color: var(--vow);
-      animation: theme-icon-breath 5.5s ease-in-out infinite;
-      transition: transform .3s ease, color .3s ease, filter .3s ease;
-    }
-
-    .theme-glow::before {
-      content: "";
-      position: absolute;
-      inset: -8px;
-      border-radius: 50%;
-      background: #b8573a;
-      filter: blur(10px);
-      opacity: .1;
-      z-index: -1;
-      animation: theme-red-glow 5.5s ease-in-out infinite;
+      transition: transform .3s ease, color .3s ease;
     }
 
     #themeToggle:hover iconify-icon {
       transform: rotate(20deg) scale(1.2);
-      filter: drop-shadow(0 0 8px #ffffff);
-    }
-
-    #themeToggle:hover::before {
-      opacity: .65;
     }
 
     #themeToggle:active iconify-icon {
       transform: rotate(25deg) scale(.85);
-    }
-
-    @keyframes theme-icon-breath {
-
-      0%,
-      100% {
-        color: var(--vow);
-        filter: drop-shadow(0 0 2px #b8573a);
-      }
-
-      50% {
-        color: #ffffff;
-        filter: drop-shadow(0 0 4px #ffffff) drop-shadow(0 0 8px #b8573a);
-      }
-    }
-
-    @keyframes theme-red-glow {
-
-      0%,
-      100% {
-        opacity: .12;
-        transform: scale(.8);
-      }
-
-      50% {
-        opacity: .55;
-        transform: scale(1.25);
-      }
     }
 
     @media(max-width:480px) {
@@ -208,13 +154,7 @@
 
       #aboutPopup,
       #aboutSheet,
-      #themeToggle iconify-icon,
-      .theme-glow::before {
-        animation: none;
-      }
-
       #themeToggle iconify-icon {
-        color: var(--vow);
         transition: none;
       }
     }
@@ -232,7 +172,7 @@
       </button>
 
       <button id="themeToggle" type="button" aria-label="Chuyển sang giao diện tối" title="Chuyển giao diện sáng/tối"
-        class="theme-glow -ml-1 -mt-1 flex size-5 shrink-0 items-center justify-center rounded-full text-muted transition-all duration-200 hover:text-con hover:scale-125 active:scale-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-hl">
+        class="-ml-1 -mt-1 flex size-5 shrink-0 items-center justify-center rounded-full text-muted transition-all duration-200 hover:text-con hover:scale-125 active:scale-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-hl">
         <iconify-icon id="themeIcon" icon="lucide:moon" class="size-4"></iconify-icon>
       </button>
     </div>
@@ -306,12 +246,19 @@
           <p class="mt-3 text-base sm:text-lg font-medium text-muted">
             by <span class="font-bold text-text">mahnduc</span>
           </p>
-          <a href="https://github.com/mahnduc/mixer" target="_blank" rel="noopener noreferrer"
-            class="mt-8 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-con to-vow px-5 py-3.5 text-sm font-bold text-con-t shadow-[0_6px_24px_color-mix(in_srgb,var(--con)_30%,transparent)] transition hover:brightness-110 active:scale-[.97]">
-            <i data-lucide="github" class="size-4"></i>
-            GitHub
-            <i data-lucide="external-link" class="size-3.5"></i>
-          </a>
+          <div class="mt-8 flex flex-wrap items-center gap-3">
+            <a href="./reader/index.html" target="_blank" rel="noopener noreferrer"
+              class="inline-flex items-center justify-center gap-2 rounded-xl border border-[color-mix(in_srgb,var(--text)_16%,transparent)] bg-[color-mix(in_srgb,var(--text)_7%,transparent)] px-5 py-3.5 text-sm font-bold text-text transition hover:bg-[color-mix(in_srgb,var(--text)_13%,transparent)] active:scale-[.97]">
+              <i data-lucide="book-open" class="size-4"></i>
+              Chế độ đọc
+            </a>
+            <a href="https://github.com/mahnduc/mixer" target="_blank" rel="noopener noreferrer"
+              class="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-con to-vow px-5 py-3.5 text-sm font-bold text-con-t shadow-[0_6px_24px_color-mix(in_srgb,var(--con)_30%,transparent)] transition hover:brightness-110 active:scale-[.97]">
+              <i data-lucide="github" class="size-4"></i>
+              GitHub
+              <i data-lucide="external-link" class="size-3.5"></i>
+            </a>
+          </div>
         </div>
       </div>
     </section>
@@ -392,30 +339,67 @@
 
       if (!trigger || !popup || !sheet || !closeButton) return;
 
+      const CLOSE_MS = 240;
       let previousOverflow = "";
+      let closeTimer = null;
+      let isOpen = false;
 
-      function openAbout() {
+      function openAbout({ focusClose = true, instant = false } = {}) {
+        if (isOpen) return;
+        isOpen = true;
+
+        if (closeTimer) {
+          clearTimeout(closeTimer);
+          closeTimer = null;
+        }
+
         previousOverflow = document.body.style.overflow;
         popup.classList.remove("hidden");
-        trigger.setAttribute("aria-expanded", "true");
         document.body.style.overflow = "hidden";
-        closeButton.focus();
+        trigger.setAttribute("aria-expanded", "true");
+
+        if (instant) {
+          popup.classList.add("is-open");
+        } else {
+          void popup.offsetWidth;
+          requestAnimationFrame(() => {
+            if (isOpen) popup.classList.add("is-open");
+          });
+        }
+
+        if (focusClose) {
+          requestAnimationFrame(() => {
+            if (isOpen) closeButton.focus({ preventScroll: true });
+          });
+        }
       }
 
-      function closeAbout() {
-        if (popup.classList.contains("hidden")) return;
-        popup.classList.add("hidden");
+      function closeAbout({ restoreFocus = true } = {}) {
+        if (!isOpen) return;
+        isOpen = false;
+
+        popup.classList.remove("is-open");
         trigger.setAttribute("aria-expanded", "false");
         document.body.style.overflow = previousOverflow;
-        trigger.focus();
+
+        if (restoreFocus) {
+          trigger.focus({ preventScroll: true });
+        }
+
+        if (closeTimer) clearTimeout(closeTimer);
+        closeTimer = setTimeout(() => {
+          if (!isOpen) {
+            popup.classList.add("hidden");
+          }
+        }, CLOSE_MS);
       }
 
-      trigger.addEventListener("click", openAbout);
-      closeButton.addEventListener("click", closeAbout);
+      trigger.addEventListener("click", () => openAbout({ focusClose: true }));
+      closeButton.addEventListener("click", () => closeAbout({ restoreFocus: true }));
 
       popup.addEventListener("click", event => {
         if (event.target === popup) {
-          closeAbout();
+          closeAbout({ restoreFocus: true });
         }
       });
 
@@ -424,10 +408,12 @@
       });
 
       document.addEventListener("keydown", event => {
-        if (event.key === "Escape" && !popup.classList.contains("hidden")) {
-          closeAbout();
+        if (event.key === "Escape" && isOpen) {
+          closeAbout({ restoreFocus: true });
         }
       });
+
+      openAbout({ focusClose: false, instant: false });
     })();
   </script>
 </body>
