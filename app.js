@@ -19,6 +19,13 @@ const DIVIDER = "border-[color-mix(in_srgb,var(--text)_15%,transparent)]";
 const WORD_CARD =
   "bg-bg text-text border border-[color-mix(in_srgb,var(--text)_25%,transparent)]";
 
+const BORDER = "border border-[color-mix(in_srgb,var(--text)_25%,transparent)]";
+const FOCUS = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-hl";
+const FIELD = `h-9 min-w-0 px-3 rounded-full text-sm bg-bg text-text ${BORDER} ${FOCUS}`;
+const PRIMARY_BTN =
+  "flex items-center gap-1.5 h-9 px-4 rounded-full text-sm font-semibold " +
+  `bg-text text-bg transition hover:opacity-90 ${FOCUS}`;
+
 const SHADOW_REST = "0 10px 30px rgba(0,0,0,.22)";
 const SHADOW_LIFT = "0 45px 80px rgba(0,0,0,.40), 0 16px 28px rgba(0,0,0,.25)";
 const FOLLOW = 24;
@@ -34,13 +41,35 @@ const MAX_IMPORT_SIZE = 2 * 1024 * 1024;
 const MAX_SAVED_SENTENCES = 50;
 const MAX_NAME_LEN = 80;
 const MAX_LEGEND_LEN = 60;
+
+const SELECT_BLUE = "#3b82f6";
 const PALETTE = [
   "#ef4444", "#f97316", "#eab308", "#22c55e",
-  "#14b8a6", "#3b82f6", "#8b5cf6", "#ec4899"
+  "#14b8a6", SELECT_BLUE, "#8b5cf6", "#ec4899"
 ];
+
+const MAX_TABLE_ROWS = 50;
+const MAX_TABLE_COLS = 12;
+const DEFAULT_IMG_W = 160;
+const MIN_IMG_W = 24;
+const MAX_IMG_W = 1200;
+const MAX_IMG_FILE = 512 * 1024;
+const IMG_SEL = 'figure[data-kind="img"]';
+const IMG_PRESETS = ["heart", "star", "smile", "sun", "moon", "leaf", "lightbulb", "book-open"];
+const presetUrl = name => `https://cdn.jsdelivr.net/npm/lucide-static/icons/${name}.svg`;
+const IMG_SRC_RE =
+  /^(?:https:\/\/[^\s"'()<>\\]{1,2000}|data:image\/(?:png|jpe?g|gif|webp|svg\+xml);base64,[a-z0-9+/=]+)$/i;
 
 const cleanColor = value =>
   typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : null;
+
+const cleanSrc = value =>
+  typeof value === "string" && value.length <= 900000 && IMG_SRC_RE.test(value) ? value : null;
+
+const cleanWidth = value => {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= MIN_IMG_W && n <= MAX_IMG_W ? Math.round(n) : null;
+};
 
 const GRADIENT = "gradient";
 const GRADIENT_CSS = "linear-gradient(to right, var(--con), var(--vow))";
@@ -329,15 +358,19 @@ let currentSavedId = null;
 let colorLegend = {};
 let markedCollectionId = null;
 
-const BLOCK_TYPES = ["p", "h1", "h2", "h3", "h4", "ul", "ol", "quote", "cite"];
+const BLOCK_TYPES = ["p", "h1", "h2", "h3", "h4", "ul", "ol", "quote", "cite", "img", "table"];
 const ALIGNS = ["left", "center", "right", "justify"];
 
 const runsToBlocks = runs => (runs.length ? [{ type: "p", align: null, runs }] : []);
 
-const blocksToText = blocks =>
-  blocks
-    .map(block => (block.type === "cite" && block.runs.length ? "— " : "") + runsToText(block.runs))
-    .join("\n");
+const blockText = block =>
+  block.type === "table"
+    ? block.rows.map(row => row.map(runsToText).join("\t")).join("\n")
+    : block.type === "img"
+      ? "[ảnh]"
+      : (block.type === "cite" && block.runs.length ? "— " : "") + runsToText(block.runs);
+
+const blocksToText = blocks => blocks.map(blockText).join("\n");
 
 const defaultSentenceName = blocks => {
   const text = blocksToText(blocks).replace(/\s+/g, " ").trim();
@@ -378,8 +411,51 @@ const dedupeNames = list => {
   });
 };
 
+const cleanCell = cell =>
+  Array.isArray(cell)
+    ? cleanRuns(cell)
+    : typeof cell === "string"
+      ? cleanRuns([{ text: cell }])
+      : [];
+
+const cleanRows = rows => {
+  if (!Array.isArray(rows)) return [];
+
+  const out = rows
+    .slice(0, MAX_TABLE_ROWS)
+    .filter(Array.isArray)
+    .map(row => row.slice(0, MAX_TABLE_COLS).map(cleanCell));
+
+  const cols = Math.max(0, ...out.map(row => row.length));
+  out.forEach(row => {
+    while (row.length < cols) row.push([]);
+  });
+
+  return cols ? out : [];
+};
+
 const cleanBlock = block => {
   const type = BLOCK_TYPES.includes(block?.type) ? block.type : "p";
+
+  if (type === "img") {
+    const src = cleanSrc(block.src);
+    return src
+      ? {
+        type,
+        src,
+        width: cleanWidth(block.width) ?? DEFAULT_IMG_W,
+        color: cleanWordColor(block.color),
+        align: block.align === "center" || block.align === "right" ? block.align : null,
+        runs: []
+      }
+      : null;
+  }
+
+  if (type === "table") {
+    const rows = cleanRows(block.rows);
+    return rows.length ? { type, header: block.header === true, rows, runs: [] } : null;
+  }
+
   const keepLeft = type === "quote" || type === "cite";
 
   return {
@@ -393,13 +469,19 @@ const cleanBlock = block => {
   };
 };
 
+const isEmptyBlock = block =>
+  !block.runs.length && block.type !== "img" && block.type !== "table";
+
 const cleanBlocks = list => {
   const out = [];
   if (!Array.isArray(list)) return out;
 
-  for (const raw of list) out.push(cleanBlock(raw));
+  for (const raw of list) {
+    const block = cleanBlock(raw);
+    if (block) out.push(block);
+  }
 
-  while (out.length && !out[out.length - 1].runs.length) out.pop();
+  while (out.length && isEmptyBlock(out[out.length - 1])) out.pop();
 
   return out;
 };
@@ -562,7 +644,7 @@ function persist(slots) {
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
-        version: 10,
+        version: 11,
         savedWords,
         collections,
         sentenceBlocks,
@@ -596,6 +678,17 @@ const el = (tag, cls, text, ...kids) => {
   }
   node.append(...kids);
   return node;
+};
+
+const mkBtn = (cls, title, html) => {
+  const button = el("button", cls);
+  button.type = "button";
+  if (title) {
+    button.title = title;
+    button.setAttribute("aria-label", title);
+  }
+  if (html) button.innerHTML = html;
+  return button;
 };
 
 const stripTones = value => {
@@ -654,7 +747,7 @@ const downloadJson = (data, filename) => {
 
 function domToBlocks(root) {
   const blocks = [];
-  const BLOCK_RE = /^(P|DIV|H[1-6]|BLOCKQUOTE|UL|OL)$/;
+  const BLOCK_RE = /^(P|DIV|H[1-6]|BLOCKQUOTE|UL|OL|TABLE|FIGURE)$/;
 
   const alignOf = (node, fallback = null) => {
     const raw = (node.style?.textAlign || node.getAttribute?.("align") || "").toLowerCase();
@@ -677,7 +770,21 @@ function domToBlocks(root) {
         const tag = node.tagName;
         const align = alignOf(node, inherited);
 
-        if (tag === "UL" || tag === "OL") {
+        if (tag === "FIGURE") {
+          blocks.push({
+            type: "img",
+            src: node.dataset.src,
+            width: node.dataset.w,
+            color: node.dataset.color,
+            align: alignOf(node)
+          });
+        } else if (tag === "TABLE") {
+          blocks.push({
+            type: "table",
+            header: node.dataset.header === "1",
+            rows: [...node.rows].map(row => [...row.cells].map(cell => domToRuns(cell)))
+          });
+        } else if (tag === "UL" || tag === "OL") {
           const type = tag.toLowerCase();
           [...node.children]
             .filter(child => child.tagName === "LI")
@@ -719,12 +826,92 @@ function domToBlocks(root) {
   return cleanBlocks(blocks);
 }
 
+const setMask = (node, src) => {
+  const url = `url("${src}")`;
+  Object.assign(node.style, {
+    webkitMaskImage: url,
+    maskImage: url,
+    webkitMaskRepeat: "no-repeat",
+    maskRepeat: "no-repeat",
+    webkitMaskPosition: "center",
+    maskPosition: "center",
+    webkitMaskSize: "contain",
+    maskSize: "contain"
+  });
+};
+
+function paintImage(fig) {
+  const { src, w, color } = fig.dataset;
+
+  const wrap = el("span", "rt-wrap");
+  wrap.style.width = `${cleanWidth(w) ?? DEFAULT_IMG_W}px`;
+
+  const img = document.createElement("img");
+  img.src = src;
+  img.alt = "Ảnh";
+  img.draggable = false;
+  img.onerror = () => wrap.classList.add("rt-broken");
+  if (color) img.style.visibility = "hidden";
+  wrap.append(img);
+
+  if (color) {
+    const tint = el("span", "rt-mask");
+    setMask(tint, src);
+    paintBackground(tint, color);
+    wrap.append(tint);
+  }
+
+  if (fig.classList.contains("rt-img-sel")) {
+    const handle = el("span", "rt-handle");
+    handle.dataset.handle = "1";
+    handle.title = "Kéo để đổi kích cỡ";
+    wrap.append(handle);
+  }
+
+  fig.replaceChildren(wrap);
+}
+
+function buildImageFigure(block) {
+  const fig = document.createElement("figure");
+  fig.contentEditable = "false";
+  fig.dataset.kind = "img";
+  fig.dataset.src = block.src;
+  fig.dataset.w = String(block.width);
+  if (block.color) fig.dataset.color = block.color;
+  if (block.align) fig.style.textAlign = block.align;
+  paintImage(fig);
+  return fig;
+}
+
+function buildTable(block) {
+  const table = document.createElement("table");
+  if (block.header) table.dataset.header = "1";
+
+  const body = table.createTBody();
+  block.rows.forEach(row => {
+    const tr = body.insertRow();
+    row.forEach(cell => {
+      const td = tr.insertCell();
+      appendRuns(cell, td);
+      if (!td.firstChild) td.append(document.createElement("br"));
+    });
+  });
+
+  return table;
+}
+
 function renderBlocks(blocks, container) {
   container.replaceChildren();
 
   let list = null;
 
   blocks.forEach(block => {
+    if (block.type === "img" || block.type === "table") {
+      list = null;
+      container.append(block.type === "img" ? buildImageFigure(block) : buildTable(block));
+      return;
+    }
+
     let node;
 
     if (block.type === "ul" || block.type === "ol") {
@@ -748,6 +935,13 @@ function renderBlocks(blocks, container) {
     appendRuns(block.runs, node);
     if (!node.firstChild) node.append(document.createElement("br"));
   });
+
+  const last = blocks[blocks.length - 1];
+  if (last && (last.type === "img" || last.type === "table")) {
+    const tail = document.createElement("p");
+    tail.append(document.createElement("br"));
+    container.append(tail);
+  }
 }
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
@@ -1140,13 +1334,13 @@ function init({ phonetics: phoneticsData }) {
   };
 
   const toolBtnClass =
-    "flex items-center gap-1.5 h-9 px-3 rounded-full text-sm font-semibold " +
-    "border border-[color-mix(in_srgb,var(--text)_25%,transparent)] text-text " +
+    `flex items-center gap-1.5 h-9 px-3 rounded-full text-sm font-semibold ${BORDER} text-text ` +
     "transition hover:bg-[color-mix(in_srgb,var(--text)_8%,transparent)] " +
     "disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent " +
     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-hl";
 
-  let lastExportName = "mixer-tep";
+  const DEFAULT_EXPORT_NAME = "mixer-tep";
+  let lastExportName = null;
 
   const safeFileName = (raw, fallback) =>
     raw
@@ -1171,12 +1365,7 @@ function init({ phonetics: phoneticsData }) {
       dialog.setAttribute("aria-modal", "true");
       dialog.setAttribute("aria-label", title);
 
-      const input = el(
-        "input",
-        "h-10 min-w-0 flex-1 px-3 rounded-full text-sm bg-bg text-text " +
-        "border border-[color-mix(in_srgb,var(--text)_25%,transparent)] " +
-        "focus-visible:outline focus-visible:outline-2 focus-visible:outline-hl"
-      );
+      const input = el("input", `${FIELD} flex-1 h-10`);
       input.type = "text";
       input.maxLength = MAX_NAME_LEN;
       input.value = defaultValue;
@@ -1185,13 +1374,7 @@ function init({ phonetics: phoneticsData }) {
       const cancel = el("button", toolBtnClass, "Hủy");
       cancel.type = "button";
 
-      const ok = el(
-        "button",
-        "flex items-center gap-1.5 h-9 px-4 rounded-full text-sm font-semibold " +
-        "bg-text text-bg transition hover:opacity-90 " +
-        "focus-visible:outline focus-visible:outline-2 focus-visible:outline-hl",
-        okText
-      );
+      const ok = el("button", PRIMARY_BTN, okText);
       ok.type = "button";
 
       let done = false;
@@ -1249,26 +1432,21 @@ function init({ phonetics: phoneticsData }) {
       clean: raw => safeFileName(raw, defaultName)
     });
 
-  const addSoundBtn = el("button", toolBtnClass);
-  addSoundBtn.type = "button";
-  addSoundBtn.title = "Thêm ô nhập";
-  addSoundBtn.setAttribute("aria-label", "Thêm ô nhập");
-  addSoundBtn.innerHTML =
-    '<i data-lucide="plus" class="size-4"></i><span class="text-sm font-semibold">Ô</span>';
-
-  const addSpaceBtn = el("button", toolBtnClass);
-  addSpaceBtn.type = "button";
-  addSpaceBtn.title = "Thêm dấu cách";
-  addSpaceBtn.setAttribute("aria-label", "Thêm dấu cách");
-  addSpaceBtn.innerHTML =
-    '<span class="size-2.5 rounded-full bg-hl"></span><span class="text-sm font-semibold">Cách</span>';
-
-  const clearBtn = el("button", toolBtnClass);
-  clearBtn.type = "button";
-  clearBtn.title = "Làm sạch các ô";
-  clearBtn.setAttribute("aria-label", "Làm sạch các ô");
-  clearBtn.innerHTML =
-    '<i data-lucide="eraser" class="size-4"></i><span class="text-sm font-semibold">Làm sạch</span>';
+  const addSoundBtn = mkBtn(
+    toolBtnClass,
+    "Thêm ô nhập",
+    '<i data-lucide="plus" class="size-4"></i><span class="text-sm font-semibold">Ô</span>'
+  );
+  const addSpaceBtn = mkBtn(
+    toolBtnClass,
+    "Thêm dấu cách",
+    '<span class="size-2.5 rounded-full bg-hl"></span><span class="text-sm font-semibold">Cách</span>'
+  );
+  const clearBtn = mkBtn(
+    toolBtnClass,
+    "Làm sạch các ô",
+    '<i data-lucide="eraser" class="size-4"></i><span class="text-sm font-semibold">Làm sạch</span>'
+  );
 
   const toolbar = el(
     "div",
@@ -1319,17 +1497,12 @@ function init({ phonetics: phoneticsData }) {
   };
 
   const buildRemove = (index, text) => {
-    const button = el(
-      "button",
+    const button = mkBtn(
       "flex items-center justify-center size-9 rounded-full text-muted " +
-      "hover:bg-red-500/10 hover:text-red-500 " +
-      "focus-visible:outline focus-visible:outline-2 focus-visible:outline-hl"
+      `hover:bg-red-500/10 hover:text-red-500 ${FOCUS}`,
+      text,
+      '<i data-lucide="x" class="size-4"></i>'
     );
-
-    button.type = "button";
-    button.title = text;
-    button.setAttribute("aria-label", text);
-    button.innerHTML = '<i data-lucide="x" class="size-4"></i>';
 
     button.onclick = event => {
       event.stopPropagation();
@@ -1342,16 +1515,16 @@ function init({ phonetics: phoneticsData }) {
     return button;
   };
 
-  const moveSound = (from, to) => {
-    if (from === to) return;
+  const prepareMove = (from, to) => {
+    if (from === to) return false;
 
     const a = slots[from];
     const b = slots[to];
-    if (a?.kind !== "sound" || b?.kind !== "sound") return;
+    if (a?.kind !== "sound" || b?.kind !== "sound") return false;
 
     if (b.locked && !a.locked) {
       showToast("Ô đích đang bị khóa");
-      return;
+      return false;
     }
 
     if (active >= 0) {
@@ -1359,29 +1532,17 @@ function init({ phonetics: phoneticsData }) {
       $("panel").classList.replace("flex", "hidden");
     }
 
-    slots[from] = b;
-    slots[to] = a;
+    return true;
+  };
 
+  const moveSound = (from, to) => {
+    if (!prepareMove(from, to)) return;
+    [slots[from], slots[to]] = [slots[to], slots[from]];
     persist(slots);
   };
 
   const moveEmptySlot = (from, to) => {
-    if (from === to) return;
-
-    const a = slots[from];
-    const b = slots[to];
-    if (a?.kind !== "sound" || b?.kind !== "sound") return;
-
-    if (b.locked && !a.locked) {
-      showToast("Ô đích đang bị khóa");
-      return;
-    }
-
-    if (active >= 0) {
-      active = -1;
-      $("panel").classList.replace("flex", "hidden");
-    }
-
+    if (!prepareMove(from, to)) return;
     slots.splice(to, 0, slots.splice(from, 1)[0]);
     persist(slots);
   };
@@ -1587,19 +1748,13 @@ function init({ phonetics: phoneticsData }) {
       ? `Mở khóa ${labelOf(index)}`
       : `Khóa ${labelOf(index)}`;
 
-    const lockButton = el(
-      "button",
+    const lockButton = mkBtn(
       "flex items-center justify-center size-9 rounded-full " +
       "hover:bg-[color-mix(in_srgb,var(--text)_10%,transparent)] " +
-      "focus-visible:outline focus-visible:outline-2 focus-visible:outline-hl " +
-      (slot.locked ? "text-con" : "text-muted")
+      `${FOCUS} ${slot.locked ? "text-con" : "text-muted"}`,
+      lockText,
+      `<i data-lucide="${slot.locked ? "lock" : "lock-open"}" class="size-4"></i>`
     );
-
-    lockButton.type = "button";
-    lockButton.title = lockText;
-    lockButton.setAttribute("aria-label", lockText);
-    lockButton.innerHTML =
-      `<i data-lucide="${slot.locked ? "lock" : "lock-open"}" class="size-4"></i>`;
 
     lockButton.onclick = event => {
       event.stopPropagation();
@@ -1860,8 +2015,7 @@ function init({ phonetics: phoneticsData }) {
 
   const iconBtn =
     "flex items-center justify-center size-7 shrink-0 rounded-full opacity-70 " +
-    "hover:opacity-100 hover:bg-black/15 " +
-    "focus-visible:outline focus-visible:outline-2 focus-visible:outline-hl";
+    `hover:opacity-100 hover:bg-black/15 ${FOCUS}`;
 
   const renderAll = () => {
     renderSavedWords();
@@ -1900,11 +2054,11 @@ function init({ phonetics: phoneticsData }) {
       ? `Bỏ “${item.word}” khỏi bộ sưu tập`
       : `Xóa từ ${item.word}`;
 
-    const remove = el("button", iconBtn);
-    remove.type = "button";
-    remove.title = label;
-    remove.setAttribute("aria-label", label);
-    remove.innerHTML = `<i data-lucide="${inCollection ? "x" : "trash-2"}" class="size-4"></i>`;
+    const remove = mkBtn(
+      iconBtn,
+      label,
+      `<i data-lucide="${inCollection ? "x" : "trash-2"}" class="size-4"></i>`
+    );
 
     remove.onclick = event => {
       event.stopPropagation();
@@ -1954,6 +2108,8 @@ function init({ phonetics: phoneticsData }) {
 
   const RT_STYLE = `
 .rt-doc { caret-color: var(--text); }
+.rt-doc > * { scroll-margin-top: 9rem; }
+.rt-doc ::selection { background: color-mix(in srgb, ${SELECT_BLUE} 45%, transparent); }
 .rt-doc p, .rt-doc h1, .rt-doc h2, .rt-doc h3, .rt-doc h4 { margin: 0; }
 .rt-doc h1 { font-size: 2.25rem; line-height: 1.2; font-weight: 700; margin: .4em 0 .2em; }
 .rt-doc h2 { font-size: 1.875rem; line-height: 1.25; font-weight: 700; margin: .4em 0 .2em; }
@@ -1977,6 +2133,26 @@ function init({ phonetics: phoneticsData }) {
   margin: 0 1.5rem .6em;
 }
 .rt-doc [data-kind="cite"]::before { content: "— "; }
+.rt-doc table { width: 100%; table-layout: fixed; border-collapse: collapse; margin: .5em 0; }
+.rt-doc td {
+  border: 1px solid color-mix(in srgb, var(--text) 30%, transparent);
+  padding: .35em .5em; vertical-align: top; overflow-wrap: anywhere;
+}
+.rt-doc table[data-header="1"] tr:first-child td {
+  font-weight: 700; background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.rt-doc figure[data-kind="img"] { margin: .5em 0; }
+.rt-doc .rt-wrap { position: relative; display: inline-block; max-width: 100%; vertical-align: top; }
+.rt-doc .rt-wrap img { display: block; width: 100%; height: auto; pointer-events: none; }
+.rt-doc .rt-mask { position: absolute; inset: 0; pointer-events: none; }
+.rt-doc .rt-broken { min-height: 3rem; outline: 2px dashed color-mix(in srgb, var(--text) 40%, transparent); }
+.rt-doc figure.rt-img-sel .rt-wrap { outline: 3px solid ${SELECT_BLUE}; outline-offset: 2px; }
+.rt-doc .rt-handle {
+  position: absolute; right: -9px; bottom: -9px; width: 16px; height: 16px;
+  border-radius: 9999px; background: ${SELECT_BLUE}; border: 2px solid #fff;
+  cursor: nwse-resize; touch-action: none; box-shadow: 0 1px 4px rgba(0,0,0,.4);
+}
+.rt-doc figure[style*="text-align: right"] .rt-handle { right: auto; left: -9px; cursor: nesw-resize; }
 `;
 
   if (!document.getElementById("rt-style")) {
@@ -1995,23 +2171,22 @@ function init({ phonetics: phoneticsData }) {
 
   const iconToolClass = toolBtnClass.replace("px-3", "w-9 justify-center px-0") + " rt-tool";
 
-  const makeToolBtn = (icon, title) => {
-    const button = el("button", iconToolClass);
-    button.type = "button";
-    button.title = title;
-    button.setAttribute("aria-label", title);
-    button.innerHTML = `<i data-lucide="${icon}" class="size-4"></i>`;
-    return button;
+  const makeToolBtn = (icon, title) =>
+    mkBtn(iconToolClass, title, `<i data-lucide="${icon}" class="size-4"></i>`);
+
+  const bind = (btn, fn) => {
+    btn.addEventListener("mousedown", event => event.preventDefault());
+    btn.onclick = event => {
+      event.stopPropagation();
+      fn();
+    };
+    return btn;
   };
 
   const makePipette = (title, className, { onInput, onChange }) => {
     const wrap = el("span", "relative inline-flex shrink-0");
 
-    const button = el("button", className);
-    button.type = "button";
-    button.title = title;
-    button.setAttribute("aria-label", title);
-    button.innerHTML = '<i data-lucide="pipette" class="size-4"></i>';
+    const button = mkBtn(className, title, '<i data-lucide="pipette" class="size-4"></i>');
 
     const input = el("input", "absolute inset-0 size-full opacity-0 pointer-events-none");
     input.type = "color";
@@ -2045,9 +2220,7 @@ function init({ phonetics: phoneticsData }) {
   const plainBtn = makeToolBtn("remove-formatting", "Xóa định dạng của chữ đang chọn");
 
   const selectClass =
-    "h-9 px-2 rounded-full text-sm font-semibold bg-bg text-text " +
-    "border border-[color-mix(in_srgb,var(--text)_25%,transparent)] " +
-    "focus-visible:outline focus-visible:outline-2 focus-visible:outline-hl";
+    `h-9 px-2 rounded-full text-sm font-semibold bg-bg text-text ${BORDER} ${FOCUS}`;
 
   const fontSelect = el("select", `${selectClass} w-[9.5rem]`);
   fontSelect.title = "Phông chữ (bôi đen chữ, hoặc đặt con trỏ trong tiêu đề)";
@@ -2077,8 +2250,7 @@ function init({ phonetics: phoneticsData }) {
     "div",
     "absolute left-0 top-full mt-1 z-50 hidden max-h-60 w-full overflow-y-auto " +
     "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden " +
-    `rounded-xl bg-bg text-text p-1 ${SHADOW} ` +
-    "border border-[color-mix(in_srgb,var(--text)_25%,transparent)]"
+    `rounded-xl bg-bg text-text p-1 ${SHADOW} ${BORDER}`
   );
 
   const closeSizeMenu = () => sizeMenu.classList.add("hidden");
@@ -2120,7 +2292,7 @@ function init({ phonetics: phoneticsData }) {
   const needTextHint = "Hãy bôi đen chữ (hoặc đặt con trỏ trong tiêu đề) để định dạng";
 
   const textPipette = makePipette(
-    "Màu chữ tùy chọn (bôi đen chữ, hoặc đặt con trỏ trong tiêu đề)",
+    "Màu chữ / màu ảnh tùy chọn (bôi đen chữ, hoặc chọn ảnh)",
     iconToolClass,
     {
       onChange: value => {
@@ -2155,22 +2327,24 @@ function init({ phonetics: phoneticsData }) {
   const indentBtn = makeToolBtn("indent-increase", "Thụt đầu dòng (lùi từ đầu tiên vào)");
   const quoteBtn = makeToolBtn("quote", "Trích dẫn (căn giữa, in nghiêng; có thể ghi tên tác giả)");
   const citeBtn = makeToolBtn("pen-line", "Thêm tác giả / chú thích dưới trích dẫn");
+  const imageBtn = makeToolBtn("image", "Chèn ảnh (SVG/PNG từ CDN hoặc tệp)");
+  const tableBtn = makeToolBtn("table", "Chèn bảng");
   const moveUpBtn = makeToolBtn("arrow-up", "Chuyển đoạn lên trên (Alt+↑)");
   const moveDownBtn = makeToolBtn("arrow-down", "Chuyển đoạn xuống dưới (Alt+↓)");
 
   const saveSentenceBtn = makeToolBtn("save", "Lưu tệp (Ctrl+S)");
   const copySentenceBtn = makeToolBtn("copy", "Sao chép nội dung tệp");
   const clearSentenceBtn = makeToolBtn("eraser", "Xóa nội dung tệp");
-  const exportSentenceBtn = makeToolBtn("download", "Xuất tài liệu ra tệp JSON");
+  const exportSentenceBtn = makeToolBtn("download", "Xuất tài liệu ra tệp JSON (giữ Shift để đổi tên tệp)");
   const importSentenceBtn = makeToolBtn("upload", "Nhập tài liệu từ tệp JSON");
   const legendBtn = makeToolBtn("palette", "Chú giải màu");
 
   const filesLabel = el("span", "text-sm font-semibold", "Tệp");
-  const filesBtn = el("button", toolBtnClass);
-  filesBtn.type = "button";
-  filesBtn.title = "Danh sách tệp đã lưu";
-  filesBtn.setAttribute("aria-label", "Danh sách tệp đã lưu");
-  filesBtn.innerHTML = '<i data-lucide="folder-open" class="size-4"></i>';
+  const filesBtn = mkBtn(
+    toolBtnClass,
+    "Danh sách tệp đã lưu",
+    '<i data-lucide="folder-open" class="size-4"></i>'
+  );
   filesBtn.append(filesLabel);
 
   const sentenceFile = el("input", "hidden");
@@ -2239,11 +2413,11 @@ function init({ phonetics: phoneticsData }) {
     dialog.setAttribute("aria-modal", "true");
     dialog.setAttribute("aria-label", title);
 
-    const closeBtn = el("button", `${iconBtn} text-muted`);
-    closeBtn.type = "button";
-    closeBtn.title = "Đóng";
-    closeBtn.setAttribute("aria-label", "Đóng");
-    closeBtn.innerHTML = '<i data-lucide="x" class="size-4"></i>';
+    const closeBtn = mkBtn(
+      `${iconBtn} text-muted`,
+      "Đóng",
+      '<i data-lucide="x" class="size-4"></i>'
+    );
     closeBtn.onclick = event => {
       event.stopPropagation();
       closeModal();
@@ -2296,12 +2470,19 @@ function init({ phonetics: phoneticsData }) {
 
   const usedSentenceColors = () => {
     const seen = new Set();
-    sentenceBlocks.forEach(block =>
-      block.runs.forEach(run => {
+
+    sentenceBlocks.forEach(block => {
+      if (block.type === "img") {
+        if (block.color) seen.add(block.color);
+        return;
+      }
+
+      (block.type === "table" ? block.rows.flat(2) : block.runs).forEach(run => {
         if (run.gradient) seen.add(GRADIENT);
         else if (run.color) seen.add(run.color);
-      })
-    );
+      });
+    });
+
     return [...seen];
   };
 
@@ -2321,14 +2502,11 @@ function init({ phonetics: phoneticsData }) {
     legendStrip.replaceChildren(
       el("span", "text-xs font-semibold uppercase tracking-wide text-muted", "Chú giải"),
       ...items.map(([color, label]) => {
-        const chip = el(
-          "button",
+        const chip = mkBtn(
           "flex items-center gap-1.5 rounded-lg px-1 py-0.5 text-sm " +
-          "hover:bg-[color-mix(in_srgb,var(--text)_8%,transparent)] " +
-          "focus-visible:outline focus-visible:outline-2 focus-visible:outline-hl"
+          `hover:bg-[color-mix(in_srgb,var(--text)_8%,transparent)] ${FOCUS}`,
+          "Sửa chú giải màu"
         );
-        chip.type = "button";
-        chip.title = "Sửa chú giải màu";
 
         const dot = el("span", "size-3 shrink-0 rounded-full");
         paintBackground(dot, color);
@@ -2345,9 +2523,120 @@ function init({ phonetics: phoneticsData }) {
 
   const group = (...buttons) => el("div", "flex items-center gap-1", "", ...buttons);
 
-  const centerCol = el(
+  let selectedImg = null;
+  let pickedAt = 0;
+
+  const barClass =
+    "flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2 rounded-2xl " +
+    "border border-[color-mix(in_srgb,var(--text)_20%,transparent)]";
+
+  const barLabel = text =>
+    el("span", "text-xs font-semibold uppercase tracking-wide text-muted", text);
+
+  const widthRange = el("input", "w-28 accent-[#3b82f6]");
+  widthRange.type = "range";
+  widthRange.min = String(MIN_IMG_W);
+  widthRange.max = "800";
+  widthRange.step = "4";
+  widthRange.setAttribute("aria-label", "Chiều rộng ảnh");
+
+  const widthNum = el("input", `${FIELD} w-20 px-2`);
+  widthNum.type = "number";
+  widthNum.min = String(MIN_IMG_W);
+  widthNum.max = String(MAX_IMG_W);
+  widthNum.setAttribute("aria-label", "Chiều rộng ảnh (px)");
+
+  const imgPalette = [SELECT_BLUE, ...PALETTE.filter(c => c !== SELECT_BLUE)].map(color => {
+    const dot = bind(
+      mkBtn(
+        `size-6 shrink-0 rounded-full ${BORDER} transition hover:scale-110 ${FOCUS}`,
+        `Đổi màu ảnh ${color}`
+      ),
+      () => setImageColor(color)
+    );
+    dot.style.backgroundColor = color;
+    return dot;
+  });
+
+  const imgPipette = makePipette("Màu ảnh tùy chọn", iconToolClass, {
+    onChange: value => setImageColor(value)
+  });
+  imgPipette.input.value = SELECT_BLUE;
+
+  const imgGradientBtn = bind(mkBtn(iconToolClass, "Ảnh màu gradient như logo Mixer"), () =>
+    setImageColor(GRADIENT)
+  );
+  const imgGradientDot = el("span", "size-4 rounded-full");
+  imgGradientDot.style.backgroundImage = GRADIENT_CSS;
+  imgGradientBtn.append(imgGradientDot);
+
+  const imgResetBtn = bind(makeToolBtn("rotate-ccw", "Trả về màu gốc của ảnh"), () =>
+    setImageColor(null)
+  );
+
+  const imgAlignBtns = [
+    ["left", "align-left", "Căn trái ảnh"],
+    ["center", "align-center", "Căn giữa ảnh"],
+    ["right", "align-right", "Căn phải ảnh"]
+  ].map(([align, icon, title]) => [
+    bind(makeToolBtn(icon, title), () => setImageAlign(align)),
+    align
+  ]);
+
+  const imgUpBtn = bind(makeToolBtn("arrow-up", "Chuyển ảnh lên trên"), () => moveImage(-1));
+  const imgDownBtn = bind(makeToolBtn("arrow-down", "Chuyển ảnh xuống dưới"), () => moveImage(1));
+  const imgDeleteBtn = bind(makeToolBtn("trash-2", "Xóa ảnh (Delete)"), () => removeSelectedImage());
+
+  const imgBar = el(
     "div",
-    "min-w-0 w-full flex flex-col gap-3 lg:col-start-2 lg:row-start-1",
+    barClass,
+    "",
+    barLabel("Ảnh"),
+    widthRange,
+    widthNum,
+    el("span", "text-xs text-muted", "px"),
+    el("div", "flex items-center gap-1.5", "", ...imgPalette, imgPipette.wrap, imgGradientBtn, imgResetBtn),
+    group(...imgAlignBtns.map(([btn]) => btn)),
+    group(imgUpBtn, imgDownBtn, imgDeleteBtn)
+  );
+  setShown(imgBar, false);
+
+  const tableAct = (text, title, fn) => bind(mkBtn(toolBtnClass + " rt-tool", title, ""), fn);
+  const tableTool = (text, title, fn) => {
+    const btn = tableAct(text, title, fn);
+    btn.textContent = text;
+    return btn;
+  };
+
+  const headerBtn = tableTool("Hàng tiêu đề", "Bật/tắt hàng tiêu đề", () => {
+    const cell = cellEl();
+    if (!cell) return;
+    const table = cell.closest("table");
+    if (table.dataset.header === "1") delete table.dataset.header;
+    else table.dataset.header = "1";
+    syncFromEditor();
+    syncBars();
+  });
+
+  const tableBar = el(
+    "div",
+    barClass,
+    "",
+    barLabel("Bảng"),
+    tableTool("+ Hàng", "Thêm hàng bên dưới", () => withCell(addRow)),
+    tableTool("+ Cột", "Thêm cột bên phải", () => withCell(addCol)),
+    tableTool("Xóa hàng", "Xóa hàng hiện tại", () => withCell(delRow)),
+    tableTool("Xóa cột", "Xóa cột hiện tại", () => withCell(delCol)),
+    headerBtn,
+    tableTool("Xóa bảng", "Xóa cả bảng", () => withCell((td, table) => table.remove())),
+    el("span", "text-xs text-muted", "Tab: sang ô kế tiếp")
+  );
+  setShown(tableBar, false);
+
+  const stickyBar = el(
+    "div",
+    "sticky top-0 z-30 flex flex-col gap-3 py-2 bg-bg " +
+    "border-b border-[color-mix(in_srgb,var(--text)_12%,transparent)]",
     "",
     el(
       "div",
@@ -2373,11 +2662,48 @@ function init({ phonetics: phoneticsData }) {
       group(...alignBtns),
       group(bulletBtn, numberBtn),
       group(indentBtn, quoteBtn, citeBtn),
+      group(imageBtn, tableBtn),
       group(moveUpBtn, moveDownBtn)
     ),
+    imgBar,
+    tableBar
+  );
+
+  const centerCol = el(
+    "div",
+    "min-w-0 w-full flex flex-col gap-3 lg:col-start-2 lg:row-start-1",
+    "",
+    stickyBar,
     editor,
     legendStrip
   );
+
+  const toolRow = stickyBar.children[1];
+  let toolsCollapsed = false;
+
+  const collapseBtn = mkBtn(iconToolClass, "", "");
+
+  const applyCollapse = () => {
+    const label = toolsCollapsed ? "Mở rộng thanh công cụ" : "Thu gọn thanh công cụ";
+
+    setShown(toolRow, !toolsCollapsed);
+    collapseBtn.title = label;
+    collapseBtn.setAttribute("aria-label", label);
+    collapseBtn.setAttribute("aria-expanded", String(!toolsCollapsed));
+    collapseBtn.innerHTML =
+      `<i data-lucide="${toolsCollapsed ? "chevron-down" : "chevron-up"}" class="size-4"></i>`;
+
+    syncBars();
+    if (window.lucide) lucide.createIcons();
+  };
+
+  bind(collapseBtn, () => {
+    toolsCollapsed = !toolsCollapsed;
+    applyCollapse();
+  });
+
+  stickyBar.children[0].append(collapseBtn);
+  applyCollapse();
 
   const workspace = el(
     "div",
@@ -2404,6 +2730,30 @@ function init({ phonetics: phoneticsData }) {
     const block = node?.closest?.("h1,h2,h3,h4,h5,h6,li,p,div");
 
     return block && block !== editor && editor.contains(block) ? block : null;
+  };
+
+  function cellEl() {
+    const sel = window.getSelection();
+    if (!sel?.rangeCount || !editor.contains(sel.anchorNode)) return null;
+
+    const base = sel.anchorNode;
+    const node = base.nodeType === Node.TEXT_NODE ? base.parentElement : base;
+    const td = node?.closest?.("td");
+
+    return td && editor.contains(td) ? td : null;
+  }
+
+  const caretIn = (node, atStart = true) => {
+    if (!node) return;
+
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    range.collapse(atStart);
+
+    editor.focus({ preventScroll: true });
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
   };
 
   const placeCaretAtEnd = () => {
@@ -2467,14 +2817,7 @@ function init({ phonetics: phoneticsData }) {
     if (!heading) return;
 
     heading.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
-
-    const range = document.createRange();
-    range.selectNodeContents(heading);
-    range.collapse(false);
-    editor.focus({ preventScroll: true });
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
+    caretIn(heading, false);
 
     if (!reduceMotion) {
       heading.animate(
@@ -2501,8 +2844,7 @@ function init({ phonetics: phoneticsData }) {
         const button = el(
           "button",
           "w-full truncate text-left rounded-lg py-1 pr-2 text-sm text-text " +
-          "hover:bg-[color-mix(in_srgb,var(--text)_10%,transparent)] " +
-          "focus-visible:outline focus-visible:outline-2 focus-visible:outline-hl " +
+          `hover:bg-[color-mix(in_srgb,var(--text)_10%,transparent)] ${FOCUS} ` +
           (item.level === 1 ? "font-bold" : item.level === 2 ? "font-semibold" : ""),
           item.text || "(Tiêu đề trống)"
         );
@@ -2546,7 +2888,7 @@ function init({ phonetics: phoneticsData }) {
       !sentenceBlocks.length &&
       editor.children.length <= 1 &&
       !editor.textContent &&
-      !editor.querySelector("h1,h2,h3,h4,ul,ol,[data-kind],[data-indent],[style*='text-align']")
+      !editor.querySelector("h1,h2,h3,h4,ul,ol,table,figure,[data-kind],[data-indent],[style*='text-align']")
     ) {
       const focused = document.activeElement === editor;
       editor.replaceChildren();
@@ -2562,6 +2904,7 @@ function init({ phonetics: phoneticsData }) {
     currentSavedId = savedId;
     renderBlocks(sentenceBlocks, editor);
     refreshSentenceUi();
+    syncBars();
     persist(slots);
   };
 
@@ -2768,6 +3111,479 @@ function init({ phonetics: phoneticsData }) {
     sel.addRange(range);
   };
 
+  const selectImage = fig => {
+    if (!fig) return;
+
+    if (selectedImg && selectedImg !== fig) {
+      selectedImg.classList.remove("rt-img-sel");
+      if (selectedImg.isConnected) paintImage(selectedImg);
+    }
+
+    selectedImg = fig;
+    pickedAt = performance.now();
+    fig.classList.add("rt-img-sel");
+    paintImage(fig);
+
+    editor.focus({ preventScroll: true });
+    const range = document.createRange();
+    range.selectNode(fig);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    syncBars();
+  };
+
+  const deselectImage = () => {
+    if (!selectedImg) return;
+
+    const fig = selectedImg;
+    selectedImg = null;
+    fig.classList.remove("rt-img-sel");
+    if (fig.isConnected) paintImage(fig);
+
+    syncBars();
+  };
+
+  const keepImageSelection = () => {
+    if (!selectedImg) return;
+    if (performance.now() - pickedAt < 250) return;
+
+    const sel = window.getSelection();
+    const inBar = imgBar.contains(document.activeElement);
+    const covered =
+      sel?.rangeCount &&
+      !sel.isCollapsed &&
+      sel.getRangeAt(0).intersectsNode(selectedImg);
+
+    if (!selectedImg.isConnected || !(inBar || covered)) deselectImage();
+  };
+
+  const syncImgControls = () => {
+    const fig = selectedImg;
+    if (!fig) return;
+
+    const w = cleanWidth(fig.dataset.w) ?? DEFAULT_IMG_W;
+    widthRange.value = String(Math.min(w, Number(widthRange.max)));
+    if (document.activeElement !== widthNum) widthNum.value = String(w);
+
+    const align = fig.style.textAlign || "left";
+    imgAlignBtns.forEach(([btn, a]) => btn.setAttribute("aria-pressed", String(a === align)));
+  };
+
+  function syncBars() {
+    if (selectedImg && !selectedImg.isConnected) selectedImg = null;
+
+    const cell = selectedImg ? null : cellEl();
+
+    setShown(imgBar, Boolean(selectedImg) && !toolsCollapsed);
+    setShown(tableBar, Boolean(cell) && !toolsCollapsed);
+
+    if (selectedImg) syncImgControls();
+    if (cell) {
+      headerBtn.setAttribute("aria-pressed", String(cell.closest("table").dataset.header === "1"));
+    }
+  }
+
+  const setImageWidth = (fig, value) => {
+    const w = clamp(Math.round(Number(value)) || DEFAULT_IMG_W, MIN_IMG_W, MAX_IMG_W);
+    fig.dataset.w = String(w);
+
+    const wrap = fig.querySelector(".rt-wrap");
+    if (wrap) wrap.style.width = `${w}px`;
+
+    syncImgControls();
+  };
+
+  const setImageColor = color => {
+    const fig = selectedImg;
+    if (!fig) return false;
+
+    if (color) fig.dataset.color = color;
+    else delete fig.dataset.color;
+
+    paintImage(fig);
+    syncFromEditor();
+    return true;
+  };
+
+  const setImageAlign = align => {
+    const fig = selectedImg;
+    if (!fig) return;
+
+    fig.style.textAlign = align === "left" ? "" : align;
+    syncFromEditor();
+    syncImgControls();
+  };
+
+  const moveImage = dir => {
+    const fig = selectedImg;
+    if (!fig) return;
+
+    const sibling = dir < 0 ? fig.previousElementSibling : fig.nextElementSibling;
+    if (!sibling) {
+      showToast("Không thể di chuyển thêm");
+      return;
+    }
+
+    if (dir < 0) sibling.before(fig);
+    else sibling.after(fig);
+
+    fig.scrollIntoView({ block: "nearest" });
+    syncFromEditor();
+  };
+
+  const removeSelectedImage = () => {
+    const fig = selectedImg;
+    if (!fig) return;
+
+    const next = fig.nextElementSibling ?? fig.previousElementSibling;
+    deselectImage();
+    fig.remove();
+    syncFromEditor();
+    caretIn(next ?? editor);
+  };
+
+  widthRange.addEventListener("input", () => {
+    if (!selectedImg) return;
+    setImageWidth(selectedImg, widthRange.value);
+    syncFromEditor();
+  });
+
+  widthNum.addEventListener("change", () => {
+    if (!selectedImg) return;
+    setImageWidth(selectedImg, widthNum.value);
+    widthNum.value = selectedImg.dataset.w;
+    syncFromEditor();
+  });
+
+  widthNum.addEventListener("keydown", event => {
+    if (!event.isComposing && event.key === "Enter") widthNum.blur();
+  });
+
+  editor.addEventListener("click", event => {
+    const fig = event.target.closest?.(IMG_SEL);
+    if (!fig || !editor.contains(fig)) return;
+
+    event.preventDefault();
+    selectImage(fig);
+  });
+
+  editor.addEventListener("pointerdown", event => {
+    const handle = event.target.closest?.("[data-handle]");
+    const fig = selectedImg;
+    if (!handle || !fig || (event.button !== 0 && event.pointerType === "mouse")) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const align = fig.style.textAlign;
+    const dir = align === "right" ? -1 : 1;
+    const gain = align === "center" ? 2 : 1;
+    const startW = fig.querySelector(".rt-wrap").getBoundingClientRect().width;
+    const startX = event.clientX;
+
+    const move = e => {
+      if (e.pointerId === event.pointerId) {
+        setImageWidth(fig, startW + (e.clientX - startX) * dir * gain);
+      }
+    };
+
+    const up = e => {
+      if (e.pointerId !== event.pointerId) return;
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      syncFromEditor();
+    };
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  });
+
+  const fillCell = td => {
+    td.replaceChildren(document.createElement("br"));
+    return td;
+  };
+
+  const withCell = fn => {
+    const td = cellEl();
+    if (!td) return;
+
+    fn(td, td.closest("table"));
+    syncFromEditor();
+    syncBars();
+  };
+
+  const addRow = (td, table = td.closest("table")) => {
+    if (table.rows.length >= MAX_TABLE_ROWS) {
+      showToast(`Tối đa ${MAX_TABLE_ROWS} hàng`);
+      return;
+    }
+
+    const row = td.parentElement.cloneNode(false);
+    for (let i = 0; i < td.parentElement.cells.length; i++) {
+      row.append(fillCell(document.createElement("td")));
+    }
+    td.parentElement.after(row);
+  };
+
+  const addCol = (td, table) => {
+    if (td.parentElement.cells.length >= MAX_TABLE_COLS) {
+      showToast(`Tối đa ${MAX_TABLE_COLS} cột`);
+      return;
+    }
+
+    const at = td.cellIndex + 1;
+    [...table.rows].forEach(row => fillCell(row.insertCell(at)));
+  };
+
+  const delRow = (td, table) => {
+    td.parentElement.remove();
+    if (!table.rows.length) table.remove();
+  };
+
+  const delCol = (td, table) => {
+    if (td.parentElement.cells.length <= 1) {
+      table.remove();
+      return;
+    }
+
+    const at = td.cellIndex;
+    [...table.rows].forEach(row => row.deleteCell(at));
+  };
+
+  const stepCell = (td, dir) => {
+    const table = td.closest("table");
+    const cells = [...table.querySelectorAll("td")];
+    let next = cells[cells.indexOf(td) + dir];
+
+    if (!next && dir > 0) {
+      addRow(td, table);
+      next = [...table.querySelectorAll("td")][cells.length];
+      syncFromEditor();
+    }
+
+    caretIn(next);
+  };
+
+  const topBlock = () => {
+    const sel = window.getSelection();
+    if (!sel?.rangeCount) return null;
+
+    let node = sel.focusNode;
+    if (node === editor) node = editor.childNodes[Math.max(0, sel.focusOffset - 1)] ?? null;
+    while (node && node.parentNode !== editor) node = node.parentNode;
+
+    return node;
+  };
+
+  const insertBlock = (node, kind) => {
+    deselectImage();
+
+    if (!selectionInEditor()) {
+      restoreSel(lastSel);
+      if (!selectionInEditor()) {
+        editor.focus({ preventScroll: true });
+        placeCaretAtEnd();
+      }
+    }
+
+    const top = topBlock();
+
+    if (!top) editor.append(node);
+    else if (/^(P|DIV)$/.test(top.tagName) && !top.textContent.trim() && !top.querySelector("figure,table")) {
+      top.replaceWith(node);
+    } else top.after(node);
+
+    const selector = kind === "img" ? IMG_SEL : "table";
+    const index = [...editor.querySelectorAll(selector)].indexOf(node);
+
+    normalizeEditor();
+
+    const made = editor.querySelectorAll(selector)[index];
+    if (kind === "img") selectImage(made);
+    else caretIn(made?.querySelector("td"));
+
+    made?.scrollIntoView({ block: "nearest" });
+  };
+
+  const insertImage = src =>
+    insertBlock(
+      buildImageFigure({ type: "img", src, width: DEFAULT_IMG_W, color: null, align: null }),
+      "img"
+    );
+
+  const insertTable = (rows, cols, header) =>
+    insertBlock(
+      buildTable({
+        type: "table",
+        header,
+        rows: Array.from({ length: rows }, () => Array.from({ length: cols }, () => []))
+      }),
+      "table"
+    );
+
+  const numField = (value, min, max, label) => {
+    const input = el("input", `${FIELD} w-20`);
+    input.type = "number";
+    input.min = String(min);
+    input.max = String(max);
+    input.value = String(value);
+    input.setAttribute("aria-label", label);
+    return input;
+  };
+
+  const openImageModal = () => {
+    const urlInput = el("input", `${FIELD} w-full`);
+    urlInput.type = "text";
+    urlInput.placeholder = "https://cdn.jsdelivr.net/…/<name>.svg";
+    urlInput.setAttribute("aria-label", "Địa chỉ ảnh");
+
+    const submit = src => {
+      const clean = cleanSrc(String(src).trim());
+      if (!clean) {
+        showToast("Chỉ nhận địa chỉ https:// hoặc tệp ảnh hợp lệ");
+        return;
+      }
+      closeModal();
+      insertImage(clean);
+    };
+
+    urlInput.addEventListener("keydown", event => {
+      if (event.isComposing || event.key !== "Enter") return;
+      event.preventDefault();
+      submit(urlInput.value);
+    });
+
+    const fileInputEl = el("input", "hidden");
+    fileInputEl.type = "file";
+    fileInputEl.accept = "image/*";
+    fileInputEl.setAttribute("aria-hidden", "true");
+    fileInputEl.addEventListener("change", () => {
+      const file = fileInputEl.files?.[0];
+      fileInputEl.value = "";
+      if (!file) return;
+
+      if (file.size > MAX_IMG_FILE) {
+        showToast("Ảnh quá lớn (tối đa 512 KB)");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => submit(reader.result);
+      reader.onerror = () => showToast("Không thể đọc tệp ảnh");
+      reader.readAsDataURL(file);
+    });
+
+    const presets = el(
+      "div",
+      "flex flex-wrap gap-2",
+      "",
+      ...IMG_PRESETS.map(name => {
+        const button = el(
+          "button",
+          `size-12 p-2 rounded-xl bg-white ${BORDER} transition hover:scale-105 ${FOCUS}`
+        );
+        button.type = "button";
+        button.title = name;
+
+        const img = document.createElement("img");
+        img.src = presetUrl(name);
+        img.alt = name;
+        img.className = "size-full";
+        button.append(img);
+
+        button.onclick = () => submit(presetUrl(name));
+        return button;
+      })
+    );
+
+    const uploadBtn = mkBtn(
+      toolBtnClass,
+      "Tải ảnh từ máy",
+      '<i data-lucide="upload" class="size-4"></i><span class="text-sm font-semibold">Tải ảnh lên</span>'
+    );
+    uploadBtn.onclick = () => fileInputEl.click();
+
+    const insertBtnEl = el("button", PRIMARY_BTN, "Chèn");
+    insertBtnEl.type = "button";
+    insertBtnEl.onclick = () => submit(urlInput.value);
+
+    openModal(
+      "Chèn ảnh",
+      body =>
+        body.replaceChildren(
+          el("p", "mb-2 text-xs text-muted", "Dán địa chỉ ảnh (ưu tiên SVG từ CDN, bắt đầu bằng https://) hoặc chọn biểu tượng mẫu."),
+          urlInput,
+          el("p", "mt-3 mb-1 text-xs font-semibold uppercase tracking-wide text-muted", "Biểu tượng mẫu"),
+          presets,
+          el(
+            "p",
+            "mt-3 text-xs text-muted",
+            "Sau khi chèn: kéo núm xanh ở góc hoặc dùng thanh Ảnh để đổi kích cỡ, màu và căn lề. " +
+            "Đổi màu cần CDN bật CORS (jsDelivr hỗ trợ)."
+          )
+        ),
+      "image",
+      el("div", "flex flex-wrap items-center justify-between gap-2", "", uploadBtn, insertBtnEl, fileInputEl)
+    );
+
+    urlInput.focus();
+  };
+
+  const openTableModal = () => {
+    const rows = numField(3, 1, MAX_TABLE_ROWS, "Số hàng");
+    const cols = numField(3, 1, MAX_TABLE_COLS, "Số cột");
+
+    const header = el("input", "size-4 accent-[#3b82f6]");
+    header.type = "checkbox";
+    header.checked = true;
+
+    const submit = () => {
+      const r = clamp(Math.round(Number(rows.value)) || 3, 1, MAX_TABLE_ROWS);
+      const c = clamp(Math.round(Number(cols.value)) || 3, 1, MAX_TABLE_COLS);
+      closeModal();
+      insertTable(r, c, header.checked);
+    };
+
+    [rows, cols].forEach(input =>
+      input.addEventListener("keydown", event => {
+        if (event.isComposing || event.key !== "Enter") return;
+        event.preventDefault();
+        submit();
+      })
+    );
+
+    const field = (text, input) =>
+      el("label", "flex items-center justify-between gap-3 text-sm", "", el("span", "", text), input);
+
+    const insertBtnEl = el("button", PRIMARY_BTN, "Chèn bảng");
+    insertBtnEl.type = "button";
+    insertBtnEl.onclick = submit;
+
+    openModal(
+      "Chèn bảng",
+      body =>
+        body.replaceChildren(
+          el(
+            "div",
+            "flex flex-col gap-3",
+            "",
+            field(`Số hàng (tối đa ${MAX_TABLE_ROWS})`, rows),
+            field(`Số cột (tối đa ${MAX_TABLE_COLS})`, cols),
+            el("label", "flex items-center gap-2 text-sm", "", header, el("span", "", "Hàng đầu là tiêu đề"))
+          )
+        ),
+      "table",
+      el("div", "flex justify-end", "", insertBtnEl)
+    );
+
+    rows.focus();
+    rows.select();
+  };
+
   const prepareSelection = useLast => {
     const saved = captureSel() || (useLast ? lastSel : null);
     if (!saved) return false;
@@ -2792,10 +3608,15 @@ function init({ phonetics: phoneticsData }) {
 
   const normalizeEditor = () => {
     const saved = captureSel();
+    const imgIndex = selectedImg ? [...editor.querySelectorAll(IMG_SEL)].indexOf(selectedImg) : -1;
+    selectedImg = null;
 
     sentenceBlocks = domToBlocks(editor);
     renderBlocks(sentenceBlocks, editor);
-    restoreSel(saved);
+
+    const fig = imgIndex >= 0 ? editor.querySelectorAll(IMG_SEL)[imgIndex] : null;
+    if (fig) selectImage(fig);
+    else restoreSel(saved);
 
     refreshSentenceUi();
     schedulePersist();
@@ -2807,6 +3628,7 @@ function init({ phonetics: phoneticsData }) {
   const MARK_FONT = "mixerfontmark";
 
   const applyInline = (kind, value, useLast = false) => {
+    if (selectedImg) return kind === "color" ? setImageColor(value) : false;
     if (!prepareSelection(useLast)) return false;
 
     document.execCommand("styleWithCSS", false, true);
@@ -2852,9 +3674,22 @@ function init({ phonetics: phoneticsData }) {
     return true;
   };
 
+  const imgHint = "Ảnh đang được chọn: dùng thanh Ảnh để chỉnh";
+  const cellHint = "Tùy chọn này không dùng được trong ô bảng";
+
   const runCommand = command => {
     if (!selectionInEditor()) {
       showToast("Hãy đặt con trỏ hoặc bôi đen chữ trong tệp để định dạng");
+      return;
+    }
+
+    if (selectedImg) {
+      showToast(imgHint);
+      return;
+    }
+
+    if (cellEl() && /^(insert|justify)/.test(command)) {
+      showToast(cellHint);
       return;
     }
 
@@ -2867,6 +3702,11 @@ function init({ phonetics: phoneticsData }) {
   const toggleHeading = level => {
     if (!selectionInEditor()) {
       showToast("Hãy đặt con trỏ trong tệp để tạo tiêu đề");
+      return;
+    }
+
+    if (selectedImg || cellEl()) {
+      showToast(selectedImg ? imgHint : cellHint);
       return;
     }
 
@@ -2884,9 +3724,9 @@ function init({ phonetics: phoneticsData }) {
   };
 
   const selectedBlockEls = () => {
-    if (!selectionInEditor()) return [];
+    if (!selectionInEditor() || selectedImg) return [];
 
-    if (!currentBlockEl()) document.execCommand("formatBlock", false, "<p>");
+    if (!currentBlockEl() && !cellEl()) document.execCommand("formatBlock", false, "<p>");
 
     const sel = window.getSelection();
     if (!sel.rangeCount) return [];
@@ -3041,19 +3881,17 @@ function init({ phonetics: phoneticsData }) {
       anchor.after(cite);
     }
 
-    const range = document.createRange();
-    range.selectNodeContents(cite);
-    range.collapse(true);
-    editor.focus();
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
-
+    caretIn(cite);
     syncFromEditor();
     updateToolbarState();
   };
 
   const moveBlocks = dir => {
+    if (selectedImg) {
+      moveImage(dir);
+      return;
+    }
+
     const els = selectedBlockEls();
     if (!els.length) {
       showToast("Hãy đặt con trỏ trong đoạn cần di chuyển");
@@ -3104,6 +3942,11 @@ function init({ phonetics: phoneticsData }) {
     {
       btn: plainBtn,
       run: () => {
+        if (selectedImg) {
+          setImageColor(null);
+          return;
+        }
+
         if (!prepareSelection(false)) {
           showToast("Hãy bôi đen chữ (hoặc đặt con trỏ trong tiêu đề) để xóa định dạng");
           return;
@@ -3139,6 +3982,8 @@ function init({ phonetics: phoneticsData }) {
     { btn: indentBtn, run: toggleIndent, active: () => currentBlockEl()?.dataset.indent === "1" },
     { btn: quoteBtn, run: applyQuote, active: () => currentBlockEl()?.dataset.kind === "quote" },
     { btn: citeBtn, run: addCaption, active: () => currentBlockEl()?.dataset.kind === "cite" },
+    { btn: imageBtn, run: openImageModal },
+    { btn: tableBtn, run: openTableModal },
     { btn: moveUpBtn, run: () => moveBlocks(-1) },
     { btn: moveDownBtn, run: () => moveBlocks(1) }
   ];
@@ -3148,6 +3993,8 @@ function init({ phonetics: phoneticsData }) {
   };
 
   function updateToolbarState() {
+    keepImageSelection();
+
     const inside = selectionInEditor();
 
     const savedSel = captureSel();
@@ -3155,7 +4002,7 @@ function init({ phonetics: phoneticsData }) {
 
     const selectOpen = document.activeElement === fontSelect;
 
-    if (inside && !selectOpen) {
+    if (inside && !selectOpen && !selectedImg) {
       let node = window.getSelection().anchorNode;
       if (node?.nodeType === Node.TEXT_NODE) node = node.parentElement;
 
@@ -3187,14 +4034,12 @@ function init({ phonetics: phoneticsData }) {
     formatButtons.forEach(({ btn, active }) => {
       if (active) btn.setAttribute("aria-pressed", String(inside && safeState(active)));
     });
+
+    syncBars();
   }
 
   formatButtons.forEach(({ btn, run, active }) => {
-    btn.addEventListener("mousedown", event => event.preventDefault());
-    btn.onclick = event => {
-      event.stopPropagation();
-      run();
-    };
+    bind(btn, run);
     if (active) btn.setAttribute("aria-pressed", "false");
   });
 
@@ -3223,6 +4068,29 @@ function init({ phonetics: phoneticsData }) {
     ) {
       event.preventDefault();
       if (!saveSentenceBtn.disabled) saveSentenceBtn.click();
+      return;
+    }
+
+    if (event.isComposing) return;
+
+    if (selectedImg) {
+      if (event.key === "Backspace" || event.key === "Delete") {
+        event.preventDefault();
+        removeSelectedImage();
+      } else if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        const next = selectedImg.nextElementSibling;
+        deselectImage();
+        if (next) caretIn(next);
+      }
+      return;
+    }
+
+    if (event.key === "Tab" && !event.ctrlKey && !event.altKey && !event.metaKey) {
+      const td = cellEl();
+      if (td) {
+        event.preventDefault();
+        stepCell(td, event.shiftKey ? -1 : 1);
+      }
     }
   });
 
@@ -3297,15 +4165,21 @@ function init({ phonetics: phoneticsData }) {
   exportSentenceBtn.onclick = async event => {
     event.stopPropagation();
 
-    const name = await askFileName(lastExportName);
-    if (name === null) return;
+    const saved = currentSaved();
+    let name =
+      !event.shiftKey && (saved ? safeFileName(saved.name, DEFAULT_EXPORT_NAME) : lastExportName);
+
+    if (!name) {
+      name = await askFileName(lastExportName ?? DEFAULT_EXPORT_NAME);
+      if (name === null) return;
+    }
     lastExportName = name;
 
     downloadJson(
       {
         app: "mixer",
         type: "sentence-document",
-        version: 5,
+        version: 6,
         exportedAt: new Date().toISOString(),
         document: { text: sentenceString(), blocks: sentenceBlocks },
         colorLegend,
@@ -3326,7 +4200,7 @@ function init({ phonetics: phoneticsData }) {
       if (typeof value === "string") return textToBlocks(value);
 
       if (Array.isArray(value)) {
-        return value.some(item => item && Array.isArray(item.runs))
+        return value.some(item => item && (Array.isArray(item.runs) || item.type))
           ? cleanBlocks(value)
           : runsToBlocks(cleanRuns(value));
       }
@@ -3485,8 +4359,7 @@ function init({ phonetics: phoneticsData }) {
     const open = el(
       "button",
       "flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-left text-base " +
-      "hover:bg-[color-mix(in_srgb,var(--text)_8%,transparent)] " +
-      "focus-visible:outline focus-visible:outline-2 focus-visible:outline-hl" +
+      `hover:bg-[color-mix(in_srgb,var(--text)_8%,transparent)] ${FOCUS}` +
       (isCurrent
         ? " font-semibold bg-[color-mix(in_srgb,var(--text)_10%,transparent)]"
         : "")
@@ -3502,11 +4375,11 @@ function init({ phonetics: phoneticsData }) {
     };
 
     const makeBtn = (icon, title, onClick, extra = "") => {
-      const button = el("button", `${iconBtn} text-muted ${extra}`);
-      button.type = "button";
-      button.title = title;
-      button.setAttribute("aria-label", title);
-      button.innerHTML = `<i data-lucide="${icon}" class="size-4"></i>`;
+      const button = mkBtn(
+        `${iconBtn} text-muted ${extra}`,
+        title,
+        `<i data-lucide="${icon}" class="size-4"></i>`
+      );
       button.onclick = event => {
         event.stopPropagation();
         onClick();
@@ -3586,18 +4459,10 @@ function init({ phonetics: phoneticsData }) {
         "flex flex-col gap-2",
         "",
         ...order.map(color => {
-          const dot = el(
-            "span",
-            "size-6 shrink-0 rounded-full border border-[color-mix(in_srgb,var(--text)_25%,transparent)]"
-          );
+          const dot = el("span", `size-6 shrink-0 rounded-full ${BORDER}`);
           paintBackground(dot, color);
 
-          const input = el(
-            "input",
-            "h-9 min-w-0 flex-1 px-3 rounded-full text-sm bg-bg text-text " +
-            "border border-[color-mix(in_srgb,var(--text)_25%,transparent)] " +
-            "focus-visible:outline focus-visible:outline-2 focus-visible:outline-hl"
-          );
+          const input = el("input", `${FIELD} flex-1`);
           input.type = "text";
           input.maxLength = MAX_LEGEND_LEN;
           input.value = colorLegend[color] || "";
@@ -3659,10 +4524,11 @@ function init({ phonetics: phoneticsData }) {
   };
 
   function openLegendModal() {
-    const insertBtn = el("button", toolBtnClass);
-    insertBtn.type = "button";
-    insertBtn.innerHTML =
-      '<i data-lucide="plus" class="size-4"></i><span class="text-sm font-semibold">Chèn vào tệp</span>';
+    const insertBtn = mkBtn(
+      toolBtnClass,
+      "",
+      '<i data-lucide="plus" class="size-4"></i><span class="text-sm font-semibold">Chèn vào tệp</span>'
+    );
     insertBtn.onclick = event => {
       event.stopPropagation();
       insertLegendIntoDocument();
@@ -3695,37 +4561,27 @@ function init({ phonetics: phoneticsData }) {
   );
   const collectionList = el("div", "grid gap-3 sm:grid-cols-2");
 
-  const nameInput = el(
-    "input",
-    "h-9 w-40 min-w-0 px-3 rounded-full text-sm bg-bg text-text " +
-    "border border-[color-mix(in_srgb,var(--text)_25%,transparent)] " +
-    "focus-visible:outline focus-visible:outline-2 focus-visible:outline-hl"
-  );
+  const nameInput = el("input", `${FIELD} w-40`);
   nameInput.type = "text";
   nameInput.maxLength = 40;
   nameInput.placeholder = "Tên bộ sưu tập";
   nameInput.setAttribute("aria-label", "Tên bộ sưu tập mới");
 
-  const createBtn = el("button", toolBtnClass);
-  createBtn.type = "button";
-  createBtn.title = "Tạo bộ sưu tập";
-  createBtn.setAttribute("aria-label", "Tạo bộ sưu tập");
-  createBtn.innerHTML =
-    '<i data-lucide="folder-plus" class="size-4"></i><span class="text-sm font-semibold">Tạo</span>';
-
-  const importBtn = el("button", toolBtnClass);
-  importBtn.type = "button";
-  importBtn.title = "Nhập bộ sưu tập từ tệp JSON";
-  importBtn.setAttribute("aria-label", "Nhập bộ sưu tập từ tệp JSON");
-  importBtn.innerHTML =
-    '<i data-lucide="upload" class="size-4"></i><span class="text-sm font-semibold">Nhập</span>';
-
-  const exportAllBtn = el("button", toolBtnClass);
-  exportAllBtn.type = "button";
-  exportAllBtn.title = "Xuất tất cả bộ sưu tập ra tệp JSON";
-  exportAllBtn.setAttribute("aria-label", "Xuất tất cả bộ sưu tập ra tệp JSON");
-  exportAllBtn.innerHTML =
-    '<i data-lucide="download" class="size-4"></i><span class="text-sm font-semibold">Xuất tất cả</span>';
+  const createBtn = mkBtn(
+    toolBtnClass,
+    "Tạo bộ sưu tập",
+    '<i data-lucide="folder-plus" class="size-4"></i><span class="text-sm font-semibold">Tạo</span>'
+  );
+  const importBtn = mkBtn(
+    toolBtnClass,
+    "Nhập bộ sưu tập từ tệp JSON",
+    '<i data-lucide="upload" class="size-4"></i><span class="text-sm font-semibold">Nhập</span>'
+  );
+  const exportAllBtn = mkBtn(
+    toolBtnClass,
+    "Xuất tất cả bộ sưu tập ra tệp JSON",
+    '<i data-lucide="download" class="size-4"></i><span class="text-sm font-semibold">Xuất tất cả</span>'
+  );
 
   const fileInput = el("input", "hidden");
   fileInput.type = "file";
@@ -3767,15 +4623,11 @@ function init({ phonetics: phoneticsData }) {
   };
 
   const buildSwatch = (getColor, title) => {
-    const swatch = el(
-      "button",
+    const swatch = mkBtn(
       "size-8 shrink-0 rounded-full border-2 cursor-grab shadow transition hover:scale-110 " +
-      "border-[color-mix(in_srgb,var(--text)_25%,transparent)] " +
-      "focus-visible:outline focus-visible:outline-2 focus-visible:outline-hl"
+      `border-[color-mix(in_srgb,var(--text)_25%,transparent)] ${FOCUS}`,
+      title
     );
-    swatch.type = "button";
-    swatch.title = title;
-    swatch.setAttribute("aria-label", title);
 
     const color = getColor();
     if (color) {
@@ -3791,7 +4643,7 @@ function init({ phonetics: phoneticsData }) {
       event.stopPropagation();
       if (suppressClick) return;
       if (applyColorToSelection(getColor())) return;
-      showToast("Kéo màu vào thẻ chữ, hoặc bôi đen chữ trong tệp rồi bấm màu");
+      showToast("Kéo màu vào thẻ chữ, hoặc bôi đen chữ / chọn ảnh trong tệp rồi bấm màu");
     };
 
     attachSwatchDrag(swatch, getColor);
@@ -3809,8 +4661,7 @@ function init({ phonetics: phoneticsData }) {
     "Chọn màu tùy chỉnh",
     "flex items-center justify-center size-8 shrink-0 rounded-full border-2 text-muted " +
     "transition hover:scale-110 hover:text-text " +
-    "border-[color-mix(in_srgb,var(--text)_25%,transparent)] " +
-    "focus-visible:outline focus-visible:outline-2 focus-visible:outline-hl",
+    `border-[color-mix(in_srgb,var(--text)_25%,transparent)] ${FOCUS}`,
     {
       onInput: value => {
         customColor = value;
@@ -3833,7 +4684,7 @@ function init({ phonetics: phoneticsData }) {
     el(
       "span",
       "ml-1 text-xs text-muted",
-      "Kéo màu vào thẻ chữ trong bộ sưu tập · hoặc bôi đen chữ trong tệp rồi bấm màu"
+      "Kéo màu vào thẻ chữ trong bộ sưu tập · hoặc bôi đen chữ / chọn ảnh trong tệp rồi bấm màu"
     )
   );
 
@@ -4113,8 +4964,7 @@ function init({ phonetics: phoneticsData }) {
     const input = el(
       "input",
       "min-w-0 flex-1 h-8 px-2 rounded-lg text-sm font-semibold bg-bg text-text " +
-      "border border-[color-mix(in_srgb,var(--text)_25%,transparent)] " +
-      "focus-visible:outline focus-visible:outline-2 focus-visible:outline-hl"
+      `${BORDER} ${FOCUS}`
     );
     input.type = "text";
     input.maxLength = 40;
@@ -4171,15 +5021,15 @@ function init({ phonetics: phoneticsData }) {
     nameEl.title = "Nhấp đúp để đổi tên";
     nameEl.addEventListener("dblclick", () => startRename(col, nameEl));
 
-    const pin = el("button", `${iconBtn} ${marked ? "text-con" : "text-muted"}`);
-    pin.type = "button";
     const pinLabel = marked
       ? "Bỏ đánh dấu bộ sưu tập"
       : "Đánh dấu: hiện bên trái khung soạn tệp khi cuộn xuống";
-    pin.title = pinLabel;
-    pin.setAttribute("aria-label", pinLabel);
+    const pin = mkBtn(
+      `${iconBtn} ${marked ? "text-con" : "text-muted"}`,
+      pinLabel,
+      `<i data-lucide="${marked ? "pin-off" : "pin"}" class="size-4"></i>`
+    );
     pin.setAttribute("aria-pressed", String(marked));
-    pin.innerHTML = `<i data-lucide="${marked ? "pin-off" : "pin"}" class="size-4"></i>`;
     pin.onclick = event => {
       event.stopPropagation();
       markedCollectionId = marked ? null : col.id;
@@ -4188,31 +5038,34 @@ function init({ phonetics: phoneticsData }) {
       showToast(marked ? "Đã bỏ đánh dấu" : `Đã đánh dấu “${col.name}”`);
     };
 
-    const rename = el("button", `${iconBtn} text-muted`);
-    rename.type = "button";
-    rename.title = "Đổi tên";
+    const rename = mkBtn(
+      `${iconBtn} text-muted`,
+      "Đổi tên",
+      '<i data-lucide="pencil" class="size-4"></i>'
+    );
     rename.setAttribute("aria-label", `Đổi tên bộ sưu tập ${col.name}`);
-    rename.innerHTML = '<i data-lucide="pencil" class="size-4"></i>';
     rename.onclick = event => {
       event.stopPropagation();
       startRename(col, nameEl);
     };
 
-    const exportBtn = el("button", `${iconBtn} text-muted`);
-    exportBtn.type = "button";
-    exportBtn.title = "Xuất bộ sưu tập ra tệp JSON";
+    const exportBtn = mkBtn(
+      `${iconBtn} text-muted`,
+      "Xuất bộ sưu tập ra tệp JSON",
+      '<i data-lucide="download" class="size-4"></i>'
+    );
     exportBtn.setAttribute("aria-label", `Xuất bộ sưu tập ${col.name} ra JSON`);
-    exportBtn.innerHTML = '<i data-lucide="download" class="size-4"></i>';
     exportBtn.onclick = event => {
       event.stopPropagation();
       exportCollections([col], `mixer-${slugify(col.name)}.json`);
     };
 
-    const del = el("button", `${iconBtn} text-muted hover:text-red-500`);
-    del.type = "button";
-    del.title = "Xóa bộ sưu tập (các từ quay về danh sách từ)";
+    const del = mkBtn(
+      `${iconBtn} text-muted hover:text-red-500`,
+      "Xóa bộ sưu tập (các từ quay về danh sách từ)",
+      '<i data-lucide="trash-2" class="size-4"></i>'
+    );
     del.setAttribute("aria-label", `Xóa bộ sưu tập ${col.name}`);
-    del.innerHTML = '<i data-lucide="trash-2" class="size-4"></i>';
     del.onclick = event => {
       event.stopPropagation();
       if (markedCollectionId === col.id) markedCollectionId = null;
@@ -4266,11 +5119,12 @@ function init({ phonetics: phoneticsData }) {
       .map(id => savedWords.find(word => word.id === id))
       .filter(Boolean);
 
-    const unpin = el("button", `${iconBtn} text-muted`);
-    unpin.type = "button";
-    unpin.title = "Bỏ đánh dấu";
+    const unpin = mkBtn(
+      `${iconBtn} text-muted`,
+      "Bỏ đánh dấu",
+      '<i data-lucide="pin-off" class="size-4"></i>'
+    );
     unpin.setAttribute("aria-label", "Bỏ đánh dấu bộ sưu tập");
-    unpin.innerHTML = '<i data-lucide="pin-off" class="size-4"></i>';
     unpin.onclick = event => {
       event.stopPropagation();
       markedCollectionId = null;
@@ -4459,13 +5313,11 @@ function init({ phonetics: phoneticsData }) {
       return node;
     };
 
-    const eraser = document.createElement("button");
-
-    eraser.type = "button";
-    eraser.title = "Bỏ chọn";
-    eraser.className =
-      `w-[52px] h-[52px] flex items-center justify-center rounded-xl bg-bg text-muted ${KEY}`;
-    eraser.innerHTML = '<i data-lucide="eraser" class="size-5"></i>';
+    const eraser = mkBtn(
+      `w-[52px] h-[52px] flex items-center justify-center rounded-xl bg-bg text-muted ${KEY}`,
+      "Bỏ chọn",
+      '<i data-lucide="eraser" class="size-5"></i>'
+    );
 
     eraser.onclick = event => {
       event.stopPropagation();
