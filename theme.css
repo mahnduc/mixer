@@ -4,6 +4,7 @@
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
 
+  /* Light Theme - Giữ nguyên */
   --bg: #f6f3ee;
   --card: #fcfaf7;
   --text: #2a2926;
@@ -17,43 +18,60 @@
   --empty: #b9b2a5;
 }
 
+/* Dark Theme - Hệ màu mới */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #17181a;
-    --card: #1f2124;
-    --text: #dedad3;
-    --muted: #a09a90;
-    --line: #32353a;
-    --vow: #e8a183;
-    --vow-t: #2b1409;
-    --con: #86bfd8;
-    --con-t: #0b2230;
-    --hl: #4d4527;
-    --empty: #50545a;
+    color-scheme: dark;
+
+    --bg: #181a1d;
+    --card: #22252a;
+    --text: #e6e3dc;
+    --muted: #a5a29a;
+    --line: #383c43;
+
+    /* Nguyên âm */
+    --vow: #e6a080;
+    --vow-t: #302019;
+
+    /* Phụ âm */
+    --con: #83b9d2;
+    --con-t: #172832;
+
+    /* Highlight */
+    --hl: #51472b;
+
+    /* Ô trống */
+    --empty: #555a63;
   }
 }
 
+/* Dark Theme - Manual */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #17181a;
-  --card: #1f2124;
-  --text: #dedad3;
-  --muted: #a09a90;
-  --line: #32353a;
-  --vow: #e8a183;
-  --vow-t: #2b1409;
-  --con: #86bfd8;
-  --con-t: #0b2230;
-  --hl: #4d4527;
-  --empty: #50545a;
+
+  --bg: #181a1d;
+  --card: #22252a;
+  --text: #e6e3dc;
+  --muted: #a5a29a;
+  --line: #383c43;
+
+  --vow: #e6a080;
+  --vow-t: #302019;
+
+  --con: #83b9d2;
+  --con-t: #172832;
+
+  --hl: #51472b;
+  --empty: #555a63;
 }
 
+/* Light Theme - Manual */
 :root[data-theme="light"] {
   color-scheme: light;
 }
 
+/* Selection */
 :root {
-  color-scheme: light dark;
   user-select: none;
   -webkit-user-select: none;
 }
