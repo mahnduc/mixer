@@ -1,18 +1,9 @@
 const $ = id => document.getElementById(id);
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
 const STORAGE_KEY = "mixer-app-state-v1";
-const MIN_SLOTS = 3;
-const MAX_ITEMS = 14;
-const EDGE = 14;
 const DRAG_THRESHOLD = 5;
 const SHADOW = "shadow-[0_10px_30px_rgba(0,0,0,.22)]";
-const BOX_H = "h-[min(36vw,13.34rem)]";
-const BOX_W = "min-w-[min(24vw,10rem)]";
-
-const FILL = {
-  con: "bg-con text-con-t",
-  vow: "bg-vow text-vow-t"
-};
 
 const KEY = "shadow-[0_3px_8px_rgba(0,0,0,.25),inset_0_1px_0_rgba(255,255,255,.35)]";
 const DIVIDER = "border-[color-mix(in_srgb,var(--text)_15%,transparent)]";
@@ -31,16 +22,16 @@ const SHADOW_LIFT = "0 45px 80px rgba(0,0,0,.40), 0 16px 28px rgba(0,0,0,.25)";
 const FOLLOW = 24;
 const DROP_MS = 200;
 const RETURN_MS = 260;
-const HOVER_CLASSES = ["ring-4", "ring-hl", "scale-105"];
-const COLLECTION_HOVER = ["ring-4", "ring-hl"];
-const MAX_COLLECTIONS = 20;
+const HOVER_CLASSES = ["ring-4", "ring-hl"];
 const MAX_SENTENCE = 40;
 const MAX_WORD_LEN = 100;
+const MAX_DOC_WORDS = 1000;
 const MAX_IMPORT_WORDS = 500;
 const MAX_IMPORT_SIZE = 2 * 1024 * 1024;
 const MAX_SAVED_SENTENCES = 50;
 const MAX_NAME_LEN = 80;
 const MAX_LEGEND_LEN = 60;
+const MAX_NOTE_LEN = 300;
 
 const SELECT_BLUE = "#3b82f6";
 const PALETTE = [
@@ -63,6 +54,9 @@ const IMG_SRC_RE =
 const cleanColor = value =>
   typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : null;
 
+const cleanNote = value =>
+  typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, MAX_NOTE_LEN) : "";
+
 const cleanSrc = value =>
   typeof value === "string" && value.length <= 900000 && IMG_SRC_RE.test(value) ? value : null;
 
@@ -73,9 +67,6 @@ const cleanWidth = value => {
 
 const GRADIENT = "gradient";
 const GRADIENT_CSS = "linear-gradient(to right, var(--con), var(--vow))";
-const GRADIENT_STYLE =
-  `background-image:${GRADIENT_CSS};-webkit-background-clip:text;background-clip:text;` +
-  "-webkit-text-fill-color:transparent;color:transparent";
 const FONT_SIZES = [12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 64, 72];
 
 const FONTS = [
@@ -133,7 +124,6 @@ const paintText = (node, color) => {
   else if (color) node.style.color = color;
 };
 
-// Tạo span chữ liên kết (data-wid) với một thẻ chữ, tô màu theo màu hiện tại của thẻ.
 const makeLinkedSpan = (wordId, color) => {
   const span = document.createElement("span");
   span.dataset.wid = wordId;
@@ -141,7 +131,6 @@ const makeLinkedSpan = (wordId, color) => {
   return span;
 };
 
-// Bọc đoạn [start, end) của một text node bằng `span` (tách node nếu cần).
 const wrapTextRange = (node, start, end, span) => {
   const mid = start > 0 ? node.splitText(start) : node;
   if (mid.nodeValue.length > end - start) mid.splitText(end - start);
@@ -154,6 +143,35 @@ const cleanItem = item =>
   item && typeof item.word === "string" && item.word
     ? { word: item.word.slice(0, MAX_WORD_LEN), color: cleanColor(item.color) }
     : null;
+
+const cleanWordItem = item =>
+  item && typeof item.word === "string" && item.word.trim()
+    ? {
+      id: typeof item.id === "string" && item.id ? item.id : crypto.randomUUID(),
+      word: item.word.slice(0, MAX_WORD_LEN),
+      color: cleanWordColor(item.color),
+      bold: item.bold === true,
+      italic: item.italic === true,
+      underline: item.underline === true
+    }
+    : null;
+
+const cleanWords = list => {
+  const out = [];
+  if (!Array.isArray(list)) return out;
+
+  const seen = new Set();
+
+  for (const raw of list) {
+    const word = cleanWordItem(raw);
+    if (!word || seen.has(word.id)) continue;
+    seen.add(word.id);
+    out.push(word);
+    if (out.length >= MAX_DOC_WORDS) break;
+  }
+
+  return out;
+};
 
 const parseCssColor = value => {
   if (typeof value !== "string") return null;
@@ -179,24 +197,35 @@ const sameStyle = (a, b) =>
   (a.size || null) === (b.size || null) &&
   (a.font || null) === (b.font || null) &&
   Boolean(a.gradient) === Boolean(b.gradient) &&
-  (a.wid || null) === (b.wid || null);
+  (a.wid || null) === (b.wid || null) &&
+  (a.nid || null) === (b.nid || null) &&
+  (a.note || null) === (b.note || null);
 
-let TONES = [];
-let savedWords = [];
-let restoredSlots = null;
-let collections = [];
+let docWords = [];
 let sentenceBlocks = [];
 let savedSentences = [];
 let currentSavedId = null;
 let colorLegend = {};
-let markedCollectionId = null;
 
 const DEFAULT_DOC_SIZE = 18;
 let docSize = DEFAULT_DOC_SIZE;
 let docFont = DEFAULT_DOC_FONT;
 
-// Chữ trong tệp có thể liên kết (wid) với một thẻ chữ trong danh sách từ:
-// màu của chữ luôn lấy theo màu hiện tại của thẻ chữ đó.
+let showOutline = false;
+let showLegend = false;
+
+let dragActive = false;
+
+const withWords = (words, fn) => {
+  const previous = docWords;
+  docWords = words;
+  try {
+    return fn();
+  } finally {
+    docWords = previous;
+  }
+};
+
 const cleanRun = run => {
   if (!run || typeof run.text !== "string") return null;
 
@@ -205,8 +234,12 @@ const cleanRun = run => {
 
   const word =
     typeof run.wid === "string" && run.wid
-      ? savedWords.find(w => w.id === run.wid) || null
+      ? docWords.find(w => w.id === run.wid) || null
       : null;
+
+  const noteText = cleanNote(run.note);
+  const noteId =
+    noteText && typeof run.nid === "string" && /^[\w-]{1,40}$/.test(run.nid) ? run.nid : null;
 
   let color = cleanColor(run.color);
   let gradient = run.gradient === true;
@@ -226,7 +259,9 @@ const cleanRun = run => {
     size: cleanSize(run.size),
     font: cleanFont(run.font),
     gradient,
-    wid: word ? word.id : null
+    wid: word ? word.id : null,
+    nid: noteId,
+    note: noteId ? noteText : null
   };
 };
 
@@ -309,6 +344,12 @@ function domToRuns(root) {
     const linked = node.dataset?.wid || null;
     if (linked) next.wid = linked;
 
+    const noteId = node.dataset?.nid || null;
+    if (noteId) {
+      next.nid = noteId;
+      next.note = node.dataset.note || null;
+    }
+
     if (tag === "B" || tag === "STRONG") next.bold = true;
     if (tag === "I" || tag === "EM") next.italic = true;
     if (tag === "U") next.underline = true;
@@ -322,7 +363,6 @@ function domToRuns(root) {
       if (css.color && css.color !== "transparent") {
         next.color = parseCssColor(css.color);
         next.gradient = false;
-        // Màu đặt thủ công bên trong chữ liên kết => gỡ liên kết.
         if (!linked) next.wid = null;
       }
 
@@ -367,7 +407,9 @@ function domToRuns(root) {
       size: null,
       font: null,
       gradient: false,
-      wid: null
+      wid: null,
+      nid: null,
+      note: null
     })
   );
 
@@ -378,7 +420,7 @@ function appendRuns(runs, container) {
   runs.forEach(run => {
     const styled =
       run.color || run.bold || run.italic || run.underline || run.size || run.font ||
-      run.gradient || run.wid;
+      run.gradient || run.wid || run.nid;
 
     run.text.split("\n").forEach((part, i) => {
       if (i > 0) container.append(document.createElement("br"));
@@ -392,6 +434,11 @@ function appendRuns(runs, container) {
       const span = document.createElement("span");
       span.textContent = part;
       if (run.wid) span.dataset.wid = run.wid;
+      if (run.nid) {
+        span.dataset.nid = run.nid;
+        span.dataset.note = run.note;
+        span.title = run.note;
+      }
       if (run.gradient) setGradientText(span);
       else if (run.color) span.style.color = run.color;
       if (run.size) span.style.fontSize = `${run.size}px`;
@@ -404,12 +451,248 @@ function appendRuns(runs, container) {
   });
 }
 
+function numberNotes(root) {
+  const groups = new Map();
+
+  root.querySelectorAll("[data-nid]").forEach(node => {
+    const id = node.dataset.nid;
+    if (!groups.has(id)) groups.set(id, []);
+    groups.get(id).push(node);
+  });
+
+  let n = 0;
+  groups.forEach(nodes => {
+    n++;
+    nodes.forEach((node, i) => {
+      if (i === nodes.length - 1) {
+        if (node.dataset.n !== String(n)) node.dataset.n = String(n);
+      } else if (node.dataset.n !== undefined) {
+        delete node.dataset.n;
+      }
+    });
+  });
+
+  return groups;
+}
+
 const reduceMotion =
   window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
-const BLOCK_TYPES = ["p", "h1", "h2", "h3", "h4", "ul", "ol", "quote", "cite", "img", "table"];
+const BLOCK_TYPES = [
+  "p", "h1", "h2", "h3", "h4", "ul", "ol", "quote", "cite", "poem", "dropcap", "img", "table"
+];
 const ALIGNS = ["left", "center", "right", "justify"];
-const SPECIAL_KINDS = ["quote", "cite"];
+const SPECIAL_KINDS = ["quote", "cite", "poem", "dropcap"];
+
+const numSpec = (def, min, max, step = 1) => ({ t: "num", def, min, max, step });
+const boolSpec = def => ({ t: "bool", def });
+const pickSpec = (def, opts) => ({ t: "pick", def, opts });
+
+const headingSchema = (size, lh, top, bottom) => ({
+  size: numSpec(size, 10, 120, 1),
+  weight: pickSpec("700", ["400", "500", "600", "700", "800", "900"]),
+  lh: numSpec(lh, 0.8, 3, 0.05),
+  top: numSpec(top, 0, 5, 0.05),
+  bottom: numSpec(bottom, 0, 5, 0.05)
+});
+
+const STYLE_SCHEMA = {
+  page: {
+    top: numSpec(8, 0, 200, 1),
+    right: numSpec(12, 0, 300, 1),
+    bottom: numSpec(8, 0, 200, 1),
+    left: numSpec(12, 0, 300, 1)
+  },
+  p: {
+    lh: numSpec(1.63, 1, 3, 0.05),
+    gap: numSpec(0, 0, 3, 0.05),
+    indent: numSpec(2, 0, 10, 0.5)
+  },
+  h1: headingSchema(36, 1.2, 0.4, 0.2),
+  h2: headingSchema(30, 1.25, 0.4, 0.2),
+  h3: headingSchema(24, 1.3, 0.35, 0.15),
+  h4: headingSchema(20, 1.35, 0.3, 0.1),
+  quote: {
+    size: numSpec(1.15, 0.6, 3, 0.05),
+    italic: boolSpec(true),
+    align: pickSpec("center", ALIGNS),
+    top: numSpec(0.6, 0, 5, 0.05),
+    bottom: numSpec(0.2, 0, 5, 0.05),
+    side: numSpec(1.5, 0, 10, 0.25)
+  },
+  cite: {
+    size: numSpec(0.9, 0.5, 2, 0.05),
+    opacity: numSpec(0.75, 0.2, 1, 0.05),
+    align: pickSpec("right", ALIGNS),
+    bottom: numSpec(0.6, 0, 5, 0.05),
+    side: numSpec(1.5, 0, 10, 0.25)
+  },
+
+  poem: {
+    size: numSpec(1, 0.6, 3, 0.05),
+    lh: numSpec(1.7, 1, 3, 0.05),
+    italic: boolSpec(false),
+    top: numSpec(0.6, 0, 5, 0.05),
+    bottom: numSpec(0.6, 0, 5, 0.05)
+  },
+
+  dropcap: {
+    lines: numSpec(3, 2, 6, 1),
+    cap: numSpec(0.7, 0.4, 1, 0.01),
+    gap: numSpec(0.08, 0, 1, 0.01),
+    weight: pickSpec("700", ["400", "500", "600", "700", "800", "900"])
+  }
+};
+
+const cleanStyleValue = (spec, value) => {
+  if (spec.t === "bool") return typeof value === "boolean" ? value : spec.def;
+  if (spec.t === "pick") return spec.opts.includes(value) ? value : spec.def;
+
+  const n = Number(value);
+  if (value === "" || value === null || !Number.isFinite(n)) return spec.def;
+  return Math.round(clamp(n, spec.min, spec.max) * 100) / 100;
+};
+
+const cleanDocStyle = value => {
+  const src = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const out = {};
+
+  Object.entries(STYLE_SCHEMA).forEach(([group, fields]) => {
+    const raw = src[group] && typeof src[group] === "object" ? src[group] : {};
+    out[group] = {};
+    Object.entries(fields).forEach(([key, spec]) => {
+      out[group][key] = cleanStyleValue(spec, raw[key]);
+    });
+  });
+
+  return out;
+};
+
+let docStyle = cleanDocStyle({});
+
+const STYLE_PICK_LABELS = {
+  left: "Trái",
+  center: "Giữa",
+  right: "Phải",
+  justify: "Đều hai bên",
+  "400": "400 · Thường",
+  "500": "500 · Vừa",
+  "600": "600 · Bán đậm",
+  "700": "700 · Đậm",
+  "800": "800 · Rất đậm",
+  "900": "900 · Cực đậm"
+};
+
+const STYLE_SECTIONS = [
+  [
+    "Lề tài liệu",
+    "page",
+    [
+      ["top", "Lề trên", "px"],
+      ["right", "Lề phải", "px"],
+      ["bottom", "Lề dưới", "px"],
+      ["left", "Lề trái", "px"]
+    ]
+  ],
+  [
+    "Đoạn văn",
+    "p",
+    [
+      ["lh", "Giãn dòng", "×"],
+      ["gap", "Cách đoạn", "em"],
+      ["indent", "Thụt đầu dòng", "em"]
+    ]
+  ],
+  ...[1, 2, 3, 4].map(n => [
+    `Tiêu đề cấp ${n}`,
+    `h${n}`,
+    [
+      ["size", "Cỡ chữ", "px"],
+      ["weight", "Độ đậm", ""],
+      ["lh", "Giãn dòng", "×"],
+      ["top", "Cách trên", "em"],
+      ["bottom", "Cách dưới", "em"]
+    ]
+  ]),
+  [
+    "Trích dẫn",
+    "quote",
+    [
+      ["size", "Cỡ chữ", "em"],
+      ["italic", "In nghiêng", ""],
+      ["align", "Căn lề", ""],
+      ["top", "Cách trên", "em"],
+      ["bottom", "Cách dưới", "em"],
+      ["side", "Lề hai bên", "rem"]
+    ]
+  ],
+  [
+    "Tác giả / chú thích",
+    "cite",
+    [
+      ["size", "Cỡ chữ", "em"],
+      ["opacity", "Độ đậm nhạt", "0–1"],
+      ["align", "Căn lề", ""],
+      ["bottom", "Cách dưới", "em"],
+      ["side", "Lề hai bên", "rem"]
+    ]
+  ],
+  [
+    "Thơ tự do",
+    "poem",
+    [
+      ["size", "Cỡ chữ", "em"],
+      ["lh", "Giãn dòng", "×"],
+      ["italic", "In nghiêng", ""],
+      ["top", "Cách trên", "em"],
+      ["bottom", "Cách dưới", "em"]
+    ]
+  ],
+  [
+    "Chữ cái đầu to (tiểu thuyết)",
+    "dropcap",
+    [
+      ["lines", "Số dòng chữ cái chiếm", "dòng"],
+      ["cap", "Tỉ lệ chiều cao chữ hoa", ""],
+      ["gap", "Cách chữ bên phải", "em"],
+      ["weight", "Độ đậm", ""]
+    ]
+  ]
+];
+
+const docStyleCss = s => {
+  const dc = s.dropcap;
+  const k = ((dc.lines - 1) * s.p.lh) / dc.cap + 1;
+  const dcLine = ((dc.lines * s.p.lh) / k) * 0.99;
+
+  return [
+    `.rt-doc.rt-doc { line-height: ${s.p.lh}; }`,
+    `.rt-doc p:not([data-kind]) { margin-bottom: ${s.p.gap}em; }`,
+    `.rt-doc [data-indent="1"] { text-indent: ${s.p.indent}em; }`,
+    ...[1, 2, 3, 4].map(n => {
+      const h = s[`h${n}`];
+      return (
+        `.rt-doc h${n} { font-size: ${h.size}px; font-weight: ${h.weight}; ` +
+        `line-height: ${h.lh}; margin: ${h.top}em 0 ${h.bottom}em; }`
+      );
+    }),
+    `.rt-doc [data-kind="quote"] { text-align: ${s.quote.align}; ` +
+    `font-style: ${s.quote.italic ? "italic" : "normal"}; font-size: ${s.quote.size}em; ` +
+    `margin: ${s.quote.top}em ${s.quote.side}rem ${s.quote.bottom}em; }`,
+    `.rt-doc [data-kind="cite"] { text-align: ${s.cite.align}; font-size: ${s.cite.size}em; ` +
+    `opacity: ${s.cite.opacity}; margin: 0 ${s.cite.side}rem ${s.cite.bottom}em; }`,
+    `.rt-doc [data-kind="poem"] { text-align: left; font-size: ${s.poem.size}em; ` +
+    `line-height: ${s.poem.lh}; font-style: ${s.poem.italic ? "italic" : "normal"}; ` +
+    `max-width: 100%; margin-left: auto; margin-right: auto; }`,
+    `.rt-doc :not([data-kind="poem"]) + [data-kind="poem"], ` +
+    `.rt-doc [data-kind="poem"]:first-child { margin-top: ${s.poem.top}em; }`,
+    `.rt-doc [data-kind="poem"]:not(:has(+ [data-kind="poem"])) { margin-bottom: ${s.poem.bottom}em; }`,
+    `.rt-doc [data-kind="dropcap"] { display: flow-root; margin: .3em 0; }`,
+    `.rt-doc [data-kind="dropcap"]::first-letter { float: left; font-size: ${k.toFixed(3)}em; ` +
+    `line-height: ${dcLine.toFixed(4)}; font-weight: ${dc.weight}; ` +
+    `margin: 0 ${dc.gap}em 0 0; padding: 0; }`
+  ].join("\n");
+};
 
 const runsToBlocks = runs => (runs.length ? [{ type: "p", align: null, runs }] : []);
 
@@ -548,6 +831,29 @@ const textToBlocks = text =>
 
 const cloneBlocks = blocks => JSON.parse(JSON.stringify(blocks));
 
+const collectWids = blocks => {
+  const ids = new Set();
+  const visit = runs => runs.forEach(run => run.wid && ids.add(run.wid));
+
+  blocks.forEach(block => {
+    if (block.type === "table") block.rows.flat().forEach(visit);
+    else visit(block.runs);
+  });
+
+  return ids;
+};
+
+const blocksFromEntry = entry =>
+  Array.isArray(entry?.blocks)
+    ? cleanBlocks(entry.blocks)
+    : Array.isArray(entry?.runs)
+      ? runsToBlocks(cleanRuns(entry.runs))
+      : Array.isArray(entry?.items)
+        ? runsToBlocks(
+          legacyToRuns(entry.items.map(cleanItem).filter(Boolean).slice(0, MAX_SENTENCE))
+        )
+        : [];
+
 function readStorage() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -555,58 +861,9 @@ function readStorage() {
 
     const data = JSON.parse(raw);
 
-    if (Array.isArray(data.savedWords)) {
-      savedWords = data.savedWords
-        .filter(item => item && typeof item.word === "string")
-        .map(item => ({
-          id: typeof item.id === "string" ? item.id : crypto.randomUUID(),
-          word: item.word,
-          parts: Array.isArray(item.parts)
-            ? item.parts.filter(part => typeof part === "string")
-            : null,
-          color: cleanWordColor(item.color)
-        }));
-    }
-
-    if (Array.isArray(data.collections)) {
-      collections = data.collections
-        .filter(c => c && typeof c.name === "string")
-        .map(c => ({
-          id: typeof c.id === "string" ? c.id : crypto.randomUUID(),
-          name: c.name.slice(0, 40),
-          color: cleanColor(c.color),
-          wordIds: Array.isArray(c.wordIds)
-            ? c.wordIds.filter(id => typeof id === "string")
-            : []
-        }))
-        .slice(0, MAX_COLLECTIONS);
-
-      const known = new Set(savedWords.map(word => word.id));
-      const seen = new Set();
-
-      collections.forEach(col => {
-        col.wordIds = col.wordIds.filter(id => {
-          if (!known.has(id) || seen.has(id)) return false;
-          seen.add(id);
-          return true;
-        });
-
-        if (col.color) {
-          col.wordIds.forEach(id => {
-            const word = savedWords.find(w => w.id === id);
-            if (word && !word.color) word.color = col.color;
-          });
-        }
-        delete col.color;
-      });
-    }
-
-    if (
-      typeof data.markedCollectionId === "string" &&
-      collections.some(c => c.id === data.markedCollectionId)
-    ) {
-      markedCollectionId = data.markedCollectionId;
-    }
+    const legacyWords = cleanWords(data.savedWords);
+    const hasDocWords = Array.isArray(data.docWords);
+    docWords = hasDocWords ? cleanWords(data.docWords) : legacyWords;
 
     if (Array.isArray(data.sentenceBlocks)) {
       sentenceBlocks = cleanBlocks(data.sentenceBlocks);
@@ -621,17 +878,13 @@ function readStorage() {
     if (Array.isArray(data.savedSentences)) {
       savedSentences = data.savedSentences
         .map(entry => {
-          const blocks = Array.isArray(entry?.blocks)
-            ? cleanBlocks(entry.blocks)
-            : Array.isArray(entry?.runs)
-              ? runsToBlocks(cleanRuns(entry.runs))
-              : Array.isArray(entry?.items)
-                ? runsToBlocks(
-                  legacyToRuns(entry.items.map(cleanItem).filter(Boolean).slice(0, MAX_SENTENCE))
-                )
-                : [];
+          const hasWords = Array.isArray(entry?.words);
+          const words = hasWords ? cleanWords(entry.words) : legacyWords;
+          const blocks = withWords(words, () => blocksFromEntry(entry));
 
           if (!blocks.length) return null;
+
+          const used = collectWids(blocks);
 
           return {
             id: typeof entry.id === "string" ? entry.id : crypto.randomUUID(),
@@ -639,7 +892,8 @@ function readStorage() {
               typeof entry?.name === "string" && entry.name.trim()
                 ? cleanName(entry.name)
                 : defaultSentenceName(blocks),
-            blocks
+            blocks,
+            words: hasWords ? words : words.filter(word => used.has(word.id))
           };
         })
         .filter(Boolean)
@@ -655,66 +909,51 @@ function readStorage() {
       currentSavedId = data.currentSavedId;
     }
 
+    if (!hasDocWords) {
+      const current = collectWids(sentenceBlocks);
+      const usedElsewhere = new Set(savedSentences.flatMap(s => [...collectWids(s.blocks)]));
+      docWords = legacyWords.filter(word => current.has(word.id) || !usedElsewhere.has(word.id));
+    }
+
     colorLegend = cleanLegend(data.colorLegend);
 
     docSize = cleanSize(data.docSize) ?? DEFAULT_DOC_SIZE;
     docFont = cleanFont(data.docFont) ?? DEFAULT_DOC_FONT;
+    docStyle = cleanDocStyle(data.docStyle);
 
-    if (Array.isArray(data.slots)) {
-      const list = [];
-
-      data.slots.forEach((slot, index) => {
-        if (slot?.kind === "space") {
-          list.push({ kind: "space" });
-          return;
-        }
-
-        list.push({
-          kind: "sound",
-          value: typeof slot?.value === "string" ? slot.value : "",
-          locked: Boolean(slot?.locked)
-        });
-
-        if (slot?.split && index < data.slots.length - 1) {
-          list.push({ kind: "space" });
-        }
-      });
-
-      restoredSlots = list.slice(0, MAX_ITEMS);
-    }
+    showOutline = data.showOutline === true;
+    showLegend = data.showLegend === true;
   } catch (error) {
     console.warn("Không thể đọc dữ liệu Mixer đã lưu:", error);
-    savedWords = [];
-    collections = [];
+    docWords = [];
     sentenceBlocks = [];
     savedSentences = [];
     currentSavedId = null;
     colorLegend = {};
-    markedCollectionId = null;
-    restoredSlots = null;
     docSize = DEFAULT_DOC_SIZE;
     docFont = DEFAULT_DOC_FONT;
+    docStyle = cleanDocStyle({});
+    showOutline = false;
+    showLegend = false;
   }
 }
 
-function persist(slots) {
+function persist() {
   try {
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
-        version: 14,
+        version: 18,
         docSize,
         docFont,
-        savedWords,
-        collections,
+        docStyle,
+        docWords,
         sentenceBlocks,
         savedSentences,
         currentSavedId,
         colorLegend,
-        markedCollectionId,
-        slots: slots.map(({ kind, value, locked }) =>
-          kind === "space" ? { kind } : { kind, value, locked }
-        )
+        showOutline,
+        showLegend
       })
     );
   } catch (error) {
@@ -723,11 +962,15 @@ function persist(slots) {
   }
 }
 
+let storageWarned = false;
+let onStorageWarning = null;
+
 function showStorageWarning() {
-  const result = $("result");
-  if (!result) return;
-  result.title =
-    "Trình duyệt không thể lưu dữ liệu. Hãy kiểm tra chế độ riêng tư hoặc dung lượng lưu trữ.";
+  if (storageWarned) return;
+  storageWarned = true;
+  onStorageWarning?.(
+    "Trình duyệt không thể lưu dữ liệu. Hãy kiểm tra chế độ riêng tư hoặc dung lượng lưu trữ."
+  );
 }
 
 const el = (tag, cls, text, ...kids) => {
@@ -750,44 +993,6 @@ const mkBtn = (cls, title, html) => {
   if (html) button.innerHTML = html;
   return button;
 };
-
-const stripTones = value => {
-  let text = "";
-  let mark = "";
-
-  for (const char of value.normalize("NFD")) {
-    if (TONES.some(tone => tone.mark === char)) mark = char;
-    else text += char;
-  }
-
-  return { text: text.normalize("NFC"), mark };
-};
-
-const applyTone = (value, mark) => {
-  if (!mark) return value;
-
-  const chars = [...value.normalize("NFC")];
-
-  const shapedIndex = chars.reduce(
-    (result, char, index) => (/[ăâêôơư]/.test(char) ? index : result),
-    -1
-  );
-
-  const index = shapedIndex >= 0 ? shapedIndex : chars.length === 3 ? 1 : 0;
-
-  chars[index] = (chars[index].normalize("NFD") + mark).normalize("NFC");
-  return chars.join("");
-};
-
-const slugify = text =>
-  text
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/đ/g, "d")
-    .replace(/Đ/g, "D")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "") || "bo-suu-tap";
 
 const downloadJson = (data, filename) => {
   const blob = new Blob([JSON.stringify(data, null, 2)], {
@@ -857,10 +1062,10 @@ function domToBlocks(root) {
           const kind = node.dataset?.kind;
           const type = /^H[1-6]$/.test(tag)
             ? `h${Math.min(4, Number(tag[1]))}`
-            : tag === "BLOCKQUOTE" || kind === "quote"
+            : tag === "BLOCKQUOTE"
               ? "quote"
-              : kind === "cite"
-                ? "cite"
+              : SPECIAL_KINDS.includes(kind)
+                ? kind
                 : "p";
 
           blocks.push({
@@ -1004,19 +1209,11 @@ function renderBlocks(blocks, container) {
   }
 }
 
-const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
-
 const poseAt = (tx, ty, rz, rx, ry, s) =>
   `translate3d(${tx}px, ${ty}px, 0) perspective(900px) ` +
   `rotateZ(${rz}deg) rotateX(${rx}deg) rotateY(${ry}deg) scale(${s})`;
 
-function startDrag(srcEl, down, o = {}) {
-  const {
-    makeGhost, lift = 1.1, dim = false, fade = false,
-    onPick, onDrop, onCancel, onEnd, canDrop, onFrame,
-    targets = "[data-slot]"
-  } = o;
-
+function startDrag(srcEl, down, { makeGhost, targets, lift = 1.25, onPick, onDrop, onEnd }) {
   if (down.pointerType === "mouse" && down.button !== 0) return;
 
   const pointerId = down.pointerId;
@@ -1024,13 +1221,13 @@ function startDrag(srcEl, down, o = {}) {
 
   let w = rect.width;
   let h = rect.height;
-  let grabX = down.clientX - rect.left;
-  let grabY = down.clientY - rect.top;
+  let grabX = 0;
+  let grabY = 0;
 
   let tx = down.clientX, ty = down.clientY;
   let x = tx, y = ty;
   let rz = 0, rx = 0, ry = 0;
-  let scale = makeGhost ? 0.85 : 1;
+  let scale = 0.85;
 
   let ghost = null, raf = 0, last = 0;
   let hover = null;
@@ -1038,39 +1235,20 @@ function startDrag(srcEl, down, o = {}) {
 
   const pose = () => poseAt(x - grabX, y - grabY, rz, rx, ry, scale);
 
-  const hoverClasses = node =>
-    node.dataset.sentence !== undefined
-      ? []
-      : node.dataset.slot !== undefined
-        ? HOVER_CLASSES
-        : COLLECTION_HOVER;
-
   const setHover = node => {
     if (hover === node) return;
-    if (hover) hover.classList.remove(...hoverClasses(hover));
+    if (hover) hover.classList.remove(...HOVER_CLASSES);
     hover = node;
-    if (hover) hover.classList.add(...hoverClasses(hover));
+    if (hover) hover.classList.add(...HOVER_CLASSES);
   };
 
-  const findSlot = () => {
-    const node = document.elementFromPoint(tx, ty)?.closest(targets);
-    return node && (!canDrop || canDrop(node)) ? node : null;
-  };
+  const findTarget = () => document.elementFromPoint(tx, ty)?.closest(targets) ?? null;
 
   const begin = () => {
     dragging = true;
+    dragActive = true;
 
-    if (makeGhost) {
-      ghost = makeGhost();
-    } else {
-      ghost = srcEl.cloneNode(true);
-      ghost.removeAttribute("data-slot");
-      ghost.removeAttribute("data-chip");
-      ghost.removeAttribute("data-word");
-      ghost.removeAttribute("id");
-      ghost.classList.remove("relative", "ring-4", "ring-hl", "scale-105", "transition");
-    }
-
+    ghost = makeGhost();
     ghost.classList.add("pointer-events-none", "cursor-grabbing");
 
     Object.assign(ghost.style, {
@@ -1078,7 +1256,7 @@ function startDrag(srcEl, down, o = {}) {
       left: "0",
       top: "0",
       margin: "0",
-      zIndex: "65",
+      zIndex: "90",
       pointerEvents: "none",
       transformOrigin: "50% 50%",
       willChange: "transform",
@@ -1087,25 +1265,19 @@ function startDrag(srcEl, down, o = {}) {
       transform: "translate3d(-9999px,-9999px,0)"
     });
 
-    if (!makeGhost) {
-      ghost.style.width = `${w}px`;
-      ghost.style.height = `${h}px`;
-    }
-
     document.body.append(ghost);
 
-    if (makeGhost) {
-      const r = ghost.getBoundingClientRect();
-      w = r.width; h = r.height;
-      grabX = w / 2; grabY = h / 2;
-      x = tx; y = ty;
-    }
+    const r = ghost.getBoundingClientRect();
+    w = r.width;
+    h = r.height;
+    grabX = w / 2;
+    grabY = h / 2;
+    x = tx;
+    y = ty;
 
     ghost.style.transform = pose();
     ghost.getBoundingClientRect();
     ghost.style.boxShadow = SHADOW_LIFT;
-
-    if (dim) srcEl.style.opacity = "0.4";
 
     onPick?.();
 
@@ -1140,25 +1312,26 @@ function startDrag(srcEl, down, o = {}) {
     scale += (lift - scale) * (1 - Math.exp(-18 * dt));
 
     ghost.style.transform = pose();
-    onFrame?.(tx, ty);
     raf = requestAnimationFrame(tick);
   };
 
   const onMove = e => {
     if (e.pointerId !== pointerId) return;
-    tx = e.clientX; ty = e.clientY;
+    tx = e.clientX;
+    ty = e.clientY;
 
     if (!dragging) {
       if (Math.hypot(tx - down.clientX, ty - down.clientY) < DRAG_THRESHOLD) return;
       begin();
     }
 
-    setHover(findSlot());
+    setHover(findTarget());
   };
 
   const onUp = e => {
     if (e.pointerId !== pointerId) return;
-    tx = e.clientX; ty = e.clientY;
+    tx = e.clientX;
+    ty = e.clientY;
     finish(true);
   };
 
@@ -1180,37 +1353,32 @@ function startDrag(srcEl, down, o = {}) {
   const finish = allowDrop => {
     if (finished) return;
     finished = true;
+    dragActive = false;
     cleanup();
 
     if (!dragging) return;
 
     cancelAnimationFrame(raf);
 
-    const target = allowDrop ? findSlot() : null;
-    const point = { x: tx, y: ty };
+    const target = allowDrop ? findTarget() : null;
     setHover(null);
 
     document.body.style.cursor = "";
     document.body.style.userSelect = "";
-    srcEl.style.opacity = "";
 
     onEnd?.();
 
     const done = () => {
       ghost.remove();
-      target ? onDrop?.(target, point) : onCancel?.();
+      if (target) onDrop?.(target);
     };
 
     if (reduceMotion) return done();
 
-    const soft = fade || Boolean(target && target.dataset.slot === undefined);
-
     const dest = target ? target.getBoundingClientRect() : rect;
     const endTx = dest.left + dest.width / 2 - w / 2;
     const endTy = dest.top + dest.height / 2 - h / 2;
-    const endScale = soft
-      ? (target ? 0.6 : 0.85)
-      : target ? Math.min(dest.width / w, dest.height / h) : 1;
+    const endScale = target ? 0.6 : 0.85;
 
     const from = ghost.style.transform;
     ghost.style.transition = "none";
@@ -1221,7 +1389,7 @@ function startDrag(srcEl, down, o = {}) {
         {
           transform: poseAt(endTx, endTy, 0, 0, 0, endScale),
           boxShadow: SHADOW_REST,
-          opacity: soft ? 0 : 1
+          opacity: 0
         }
       ],
       {
@@ -1242,9 +1410,7 @@ function startDrag(srcEl, down, o = {}) {
 
 readStorage();
 
-function init({ phonetics: phoneticsData }) {
-  TONES = phoneticsData.tones || [];
-
+function init() {
   const applyDocDefaults = () => {
     const root = document.documentElement.style;
     root.setProperty("--doc-size", `${docSize}px`);
@@ -1253,134 +1419,9 @@ function init({ phonetics: phoneticsData }) {
 
   applyDocDefaults();
 
-  const tag = (groups, type) =>
-    Object.entries(groups || {}).flatMap(([key, list]) =>
-      list.map(value => ({ v: value, type, k: key }))
-    );
-
-  const sounds = [
-    ...tag(phoneticsData.consonants, "con"),
-    ...tag(phoneticsData.vowels, "vow")
-  ];
-
-  const GROUPS = [
-    { title: "Phụ âm", type: "con" },
-    { title: "Nguyên âm", type: "vow" }
-  ]
-    .map(group => ({
-      ...group,
-      items: sounds.filter(sound => sound.type === group.type)
-    }))
-    .filter(group => group.items.length);
-
-  const typeOf = Object.fromEntries(sounds.map(sound => [sound.v, sound.type]));
-
-  const makeSound = (value = "", locked = false) => {
-    const type = value ? typeOf[stripTones(value).text] : undefined;
-    return {
-      kind: "sound",
-      value: type ? value : "",
-      type,
-      locked: Boolean(locked)
-    };
-  };
-
-  const makeSpace = () => ({ kind: "space" });
-
-  const slotEls = new WeakMap();
-
-  const slots = (restoredSlots || []).map(saved =>
-    saved.kind === "space"
-      ? makeSpace()
-      : makeSound(saved.value, saved.locked)
-  );
-
-  const soundCount = () => slots.filter(s => s.kind === "sound").length;
-
-  while (soundCount() < MIN_SLOTS) slots.push(makeSound());
-
-  const numberOf = index =>
-    slots.slice(0, index).filter(s => s.kind === "sound").length + 1;
-
-  const labelOf = index => `ô ${numberOf(index)}`;
-
-  const soundIndices = () =>
-    slots.reduce((list, slot, index) => {
-      if (slot.kind === "sound") list.push(index);
-      return list;
-    }, []);
-
-  const getWords = () => {
-    const words = [""];
-
-    slots.forEach(slot => {
-      if (slot.kind === "space") words.push("");
-      else words[words.length - 1] += slot.value;
-    });
-
-    return words.filter(Boolean).map(word => word.normalize("NFC"));
-  };
-
-  const getParts = () => {
-    const parts = [];
-
-    slots.forEach(slot => {
-      if (slot.kind === "space") {
-        if (parts.length && parts[parts.length - 1] !== " ") parts.push(" ");
-      } else if (slot.value) {
-        parts.push(slot.value);
-      }
-    });
-
-    while (parts[parts.length - 1] === " ") parts.pop();
-    return parts;
-  };
-
-  const parseWord = word => {
-    const chars = [...word.normalize("NFC")];
-    const parts = [];
-    let pos = 0;
-
-    while (pos < chars.length) {
-      if (chars[pos] === " ") {
-        if (parts.length && parts[parts.length - 1] !== " ") parts.push(" ");
-        pos++;
-        continue;
-      }
-
-      let found = 0;
-
-      for (let len = Math.min(4, chars.length - pos); len >= 1; len--) {
-        const piece = chars.slice(pos, pos + len).join("");
-        if (typeOf[stripTones(piece).text]) {
-          parts.push(piece);
-          found = len;
-          break;
-        }
-      }
-
-      pos += found || 1;
-    }
-
-    while (parts[parts.length - 1] === " ") parts.pop();
-    return parts;
-  };
-
-  const partsOf = item => (item.parts?.length ? item.parts : parseWord(item.word));
-
-  let active = -1;
-  let keyEls = [];
-
-  $("row").className =
-    "flex flex-wrap justify-center items-start gap-x-0.5 gap-y-4";
-  $("groups").className = "flex flex-col gap-5 w-full min-w-0";
-  $("result").classList.add("text-center");
-
-  $("savedWords").dataset.wordlist = "1";
-
   const toast = el(
     "div",
-    "fixed left-1/2 bottom-6 z-[70] -translate-x-1/2 px-4 py-2 rounded-full " +
+    "fixed left-1/2 bottom-6 z-[95] -translate-x-1/2 px-4 py-2 rounded-full " +
     "bg-text text-bg text-sm font-semibold shadow-lg " +
     "transition-opacity duration-200 opacity-0 pointer-events-none"
   );
@@ -1402,11 +1443,17 @@ function init({ phonetics: phoneticsData }) {
     }, 1800);
   };
 
+  onStorageWarning = showToast;
+
   const toolBtnClass =
-    `flex items-center gap-1.5 h-9 px-3 rounded-full text-sm font-semibold ${BORDER} text-text ` +
+    `flex items-center gap-1.5 h-8 px-3 rounded-full text-sm font-semibold ${BORDER} text-text ` +
     "transition hover:bg-[color-mix(in_srgb,var(--text)_8%,transparent)] " +
     "disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent " +
     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-hl";
+
+  const iconBtn =
+    "flex items-center justify-center size-7 shrink-0 rounded-full opacity-70 " +
+    `hover:opacity-100 hover:bg-black/15 ${FOCUS}`;
 
   const DEFAULT_EXPORT_NAME = "mixer-tep";
   let lastExportName = null;
@@ -1420,11 +1467,11 @@ function init({ phonetics: phoneticsData }) {
       .replace(/^\.+/, "")
       .slice(0, 80) || fallback;
 
-  const askName = ({ title, defaultValue, suffix = "", okText = "OK", clean }) =>
+  const askName = ({ title, defaultValue, suffix = "", okText = "OK", clean, maxLength = MAX_NAME_LEN }) =>
     new Promise(resolve => {
       const overlay = el(
         "div",
-        "fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/40"
+        "fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40"
       );
       const dialog = el(
         "div",
@@ -1436,7 +1483,7 @@ function init({ phonetics: phoneticsData }) {
 
       const input = el("input", `${FIELD} flex-1 h-10`);
       input.type = "text";
-      input.maxLength = MAX_NAME_LEN;
+      input.maxLength = maxLength;
       input.value = defaultValue;
       input.setAttribute("aria-label", title);
 
@@ -1501,598 +1548,17 @@ function init({ phonetics: phoneticsData }) {
       clean: raw => safeFileName(raw, defaultName)
     });
 
-  const addSoundBtn = mkBtn(
-    toolBtnClass,
-    "Thêm ô nhập",
-    '<i data-lucide="plus" class="size-4"></i><span class="text-sm font-semibold">Ô</span>'
-  );
-  const addSpaceBtn = mkBtn(
-    toolBtnClass,
-    "Thêm dấu cách",
-    '<span class="size-2.5 rounded-full bg-hl"></span><span class="text-sm font-semibold">Cách</span>'
-  );
-  const clearBtn = mkBtn(
-    toolBtnClass,
-    "Làm sạch các ô",
-    '<i data-lucide="eraser" class="size-4"></i><span class="text-sm font-semibold">Làm sạch</span>'
-  );
-
-  const toolbar = el(
-    "div",
-    "ml-auto flex items-center gap-2",
-    "",
-    addSoundBtn,
-    addSpaceBtn,
-    clearBtn
-  );
-
-  const headerEl = document.querySelector("header");
-  if (headerEl) headerEl.append(toolbar);
-  else $("row").before(toolbar);
-
-  addSoundBtn.onclick = event => {
-    event.stopPropagation();
-    if (slots.length >= MAX_ITEMS) return;
-    slots.push(makeSound());
-    persist(slots);
-    open(slots.length - 1);
-  };
-
-  addSpaceBtn.onclick = event => {
-    event.stopPropagation();
-    if (slots.length >= MAX_ITEMS) return;
-    close();
-    slots.push(makeSpace());
-    persist(slots);
-    render();
-  };
-
-  clearBtn.onclick = event => {
-    event.stopPropagation();
-    close();
-
-    for (let i = slots.length - 1; i >= 0; i--) {
-      if (slots[i].kind === "space") slots.splice(i, 1);
-    }
-
-    slots.forEach(slot => {
-      if (slot.locked) return;
-      slot.value = "";
-      slot.type = undefined;
-    });
-
-    persist(slots);
-    render();
-  };
-
-  const buildRemove = (index, text) => {
-    const button = mkBtn(
-      "flex items-center justify-center size-9 rounded-full text-muted " +
-      `hover:bg-red-500/10 hover:text-red-500 ${FOCUS}`,
-      text,
-      '<i data-lucide="x" class="size-4"></i>'
-    );
-
-    button.onclick = event => {
-      event.stopPropagation();
-      close();
-      slots.splice(index, 1);
-      persist(slots);
-      render();
-    };
-
-    return button;
-  };
-
-  const prepareMove = (from, to) => {
-    if (from === to) return false;
-
-    const a = slots[from];
-    const b = slots[to];
-    if (a?.kind !== "sound" || b?.kind !== "sound") return false;
-
-    if (b.locked && !a.locked) {
-      showToast("Ô đích đang bị khóa");
-      return false;
-    }
-
-    if (active >= 0) {
-      active = -1;
-      $("panel").classList.replace("flex", "hidden");
-    }
-
-    return true;
-  };
-
-  const moveSound = (from, to) => {
-    if (!prepareMove(from, to)) return;
-    [slots[from], slots[to]] = [slots[to], slots[from]];
-    persist(slots);
-  };
-
-  const moveEmptySlot = (from, to) => {
-    if (!prepareMove(from, to)) return;
-    slots.splice(to, 0, slots.splice(from, 1)[0]);
-    persist(slots);
-  };
-
-  const loadParts = (parts, start) => {
-    if (!parts.length) return;
-
-    close();
-
-    let i = clamp(start, 0, slots.length);
-    let overflow = false;
-
-    for (const part of parts) {
-      if (part === " ") {
-        if (slots[i]?.kind === "space") {
-          i++;
-        } else if (slots.length < MAX_ITEMS) {
-          slots.splice(i, 0, makeSpace());
-          i++;
-        } else {
-          overflow = true;
-        }
-        continue;
-      }
-
-      for (; ;) {
-        const slot = slots[i];
-        if (!slot) break;
-        if (slot.kind === "space") { slots.splice(i, 1); continue; }
-        if (slot.locked) { i++; continue; }
-        break;
-      }
-
-      if (!slots[i]) {
-        if (slots.length >= MAX_ITEMS) { overflow = true; break; }
-        slots.push(makeSound());
-      }
-
-      slots[i].value = part;
-      slots[i].type = typeOf[stripTones(part).text];
-      i++;
-    }
-
-    persist(slots);
-    render();
-
-    if (overflow) showToast("Không đủ chỗ cho cả từ");
-  };
-
   let suppressClick = false;
   const releaseClick = () => setTimeout(() => { suppressClick = false; }, 60);
 
-  const attachDrag = (box, index) => {
-    const slot = slots[index];
-    const empty = !slot.value;
-
-    box.style.touchAction = "none";
-
-    const onEdge = (x, y) => {
-      const r = box.getBoundingClientRect();
-      return Math.min(x - r.left, r.right - x, y - r.top, r.bottom - y) <= EDGE;
-    };
-
-    box.addEventListener("pointermove", event => {
-      if (event.buttons) return;
-      box.style.cursor = onEdge(event.clientX, event.clientY) ? "grab" : "";
-    });
-
-    box.addEventListener("pointerdown", event => {
-      if (event.button !== 0 && event.pointerType === "mouse") return;
-      if (!empty && !onEdge(event.clientX, event.clientY)) return;
-
-      const savedClass = box.className;
-      const textNode = [...box.childNodes].find(n => n.nodeType === Node.TEXT_NODE);
-      const savedText = textNode ? textNode.textContent : "";
-
-      const emptyBox = () => {
-        if (textNode) textNode.textContent = "";
-        box.classList.remove(...(FILL[slot.type]?.split(" ") ?? []), "ring-4", "ring-hl");
-        box.classList.add("bg-bg", "text-muted");
-        box.style.cursor = "";
-      };
-
-      const restoreBox = () => {
-        if (textNode) textNode.textContent = savedText;
-        box.className = savedClass;
-      };
-
-      startDrag(box, event, {
-        lift: 1.12,
-        dim: empty,
-        canDrop: node => Number(node.dataset.slot) !== index,
-        onPick: () => {
-          suppressClick = true;
-          if (!empty) emptyBox();
-        },
-        onEnd: releaseClick,
-        onDrop: node => {
-          const to = Number(node.dataset.slot);
-          flipRender(() => {
-            if (empty) moveEmptySlot(index, to);
-            else moveSound(index, to);
-          });
-        },
-        onCancel: () => {
-          if (!empty) restoreBox();
-        }
-      });
-    });
-  };
-
   const sentenceString = () => blocksToText(sentenceBlocks);
 
-  const wordColor = wordId =>
-    savedWords.find(word => word.id === wordId)?.color || null;
-
-  const attachWordDrag = (card, item, collectionId = null) => {
-    card.addEventListener("pointerdown", event => {
-      if (event.button !== 0 && event.pointerType === "mouse") return;
-      if (event.target.closest("button")) return;
-      if (event.pointerType !== "mouse" && !event.target.closest("[data-grip]")) return;
-
-      startDrag(card, event, {
-        lift: 1.08,
-        dim: true,
-        targets: "[data-slot],[data-collection],[data-wordlist],[data-sentence]",
-        canDrop: node => {
-          if (node.dataset.collection !== undefined) {
-            return node.dataset.collection !== collectionId;
-          }
-          if (node.dataset.wordlist !== undefined) return Boolean(collectionId);
-          return true;
-        },
-        onPick: () => { suppressClick = true; },
-        onFrame: (x, y) => updateDropCaret(x, y),
-        onEnd: () => {
-          hideDropCaret();
-          releaseClick();
-        },
-        onDrop: (node, point) => {
-          if (node.dataset.collection !== undefined) {
-            addToCollection(node.dataset.collection, item.id);
-          } else if (node.dataset.wordlist !== undefined) {
-            removeFromCollection(collectionId, item.id);
-          } else if (node.dataset.sentence !== undefined) {
-            insertWordIntoEditor(item, point, wordColor(item.id));
-          } else {
-            loadParts(partsOf(item), Number(node.dataset.slot));
-          }
-        }
-      });
-    });
+  const commitWords = () => {
+    persist();
+    renderWords();
+    refreshSentenceUi();
   };
 
-  const buildSlot = index => {
-    const slot = slots[index];
-    const number = numberOf(index);
-
-    const wrapper = el("div", "flex flex-col items-center gap-2");
-    slotEls.set(slot, wrapper);
-
-    const box = el(
-      "button",
-      `relative flex items-center justify-center ${BOX_H} ${BOX_W} px-[.2em] ` +
-      `rounded-[2rem] text-[min(15vw,6.5rem)] font-bold transition ${SHADOW} ` +
-      (slot.value ? FILL[slot.type] : "bg-bg text-muted") +
-      (active === index ? " ring-4 ring-hl" : "") +
-      (slot.locked ? " opacity-90" : "") +
-      " focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-hl",
-      slot.value
-    );
-
-    box.type = "button";
-    box.dataset.slot = String(index);
-    box.setAttribute("aria-label", `Chọn ${labelOf(index)}`);
-
-    if (number <= 9) {
-      const badge = el(
-        "span",
-        "absolute top-3 left-4 text-xs font-semibold leading-none opacity-60 pointer-events-none",
-        String(number)
-      );
-      box.append(badge);
-    }
-
-    box.onclick = event => {
-      event.stopPropagation();
-
-      if (suppressClick) return;
-
-      if (slot.locked) {
-        showToast(`Ô ${number} đang bị khóa`);
-        return;
-      }
-
-      active === index ? close() : open(index);
-    };
-
-    attachDrag(box, index);
-
-    const actions = el("div", "flex items-center gap-1");
-
-    const lockText = slot.locked
-      ? `Mở khóa ${labelOf(index)}`
-      : `Khóa ${labelOf(index)}`;
-
-    const lockButton = mkBtn(
-      "flex items-center justify-center size-9 rounded-full " +
-      "hover:bg-[color-mix(in_srgb,var(--text)_10%,transparent)] " +
-      `${FOCUS} ${slot.locked ? "text-con" : "text-muted"}`,
-      lockText,
-      `<i data-lucide="${slot.locked ? "lock" : "lock-open"}" class="size-4"></i>`
-    );
-
-    lockButton.onclick = event => {
-      event.stopPropagation();
-      slot.locked = !slot.locked;
-      if (slot.locked && active === index) close();
-      persist(slots);
-      render();
-    };
-
-    actions.append(lockButton);
-
-    if (soundCount() > MIN_SLOTS) {
-      actions.append(buildRemove(index, `Xóa ${labelOf(index)}`));
-    }
-
-    wrapper.append(box, actions);
-    return wrapper;
-  };
-
-  const buildSpace = index => {
-    const wrapper = el("div", "flex flex-col items-center gap-2");
-    slotEls.set(slots[index], wrapper);
-
-    const dot = el(
-      "div",
-      `flex items-center justify-center ${BOX_H} w-6 sm:w-8`,
-      "",
-      el("span", "size-4 sm:size-5 rounded-full bg-hl")
-    );
-
-    dot.title = "Dấu cách";
-    dot.setAttribute("role", "img");
-    dot.setAttribute("aria-label", "Dấu cách");
-
-    wrapper.append(dot, buildRemove(index, "Xóa dấu cách"));
-    return wrapper;
-  };
-
-  const canInsertAt = index =>
-    index > 0 &&
-    slots.length < MAX_ITEMS &&
-    slots[index - 1].kind === "sound" &&
-    slots[index].kind === "sound";
-
-  const buildGap = index => {
-    const glow = el(
-      "span",
-      "pointer-events-none absolute left-1/2 top-1/2 h-[85%] w-8 -translate-x-1/2 -translate-y-1/2 " +
-      "opacity-0 blur-md transition-opacity duration-200 " +
-      "bg-[radial-gradient(ellipse_at_center,var(--hl),transparent_70%)] " +
-      "group-hover:opacity-70 group-focus-visible:opacity-70"
-    );
-
-    const bar = el(
-      "span",
-      "pointer-events-none absolute left-1/2 top-1/2 h-[80%] w-[3px] -translate-x-1/2 -translate-y-1/2 " +
-      "rounded-full opacity-0 transition-opacity duration-200 " +
-      "bg-[linear-gradient(to_bottom,transparent,var(--hl),transparent)] " +
-      "group-hover:opacity-100 group-focus-visible:opacity-100"
-    );
-
-    const button = el(
-      "button",
-      `group relative z-10 flex items-center justify-center shrink-0 ${BOX_H} w-2 sm:w-3 ` +
-      "focus-visible:outline-none",
-      "",
-      glow,
-      bar
-    );
-
-    button.type = "button";
-    button.title = "Chèn dấu cách";
-    button.setAttribute("aria-label", "Chèn dấu cách vào đây");
-
-    button.onclick = event => {
-      event.stopPropagation();
-      close();
-      slots.splice(index, 0, makeSpace());
-      persist(slots);
-      render();
-    };
-
-    return button;
-  };
-
-  const render = () => {
-    const row = $("row");
-    row.replaceChildren();
-
-    slots.forEach((slot, index) => {
-      if (canInsertAt(index)) row.append(buildGap(index));
-
-      row.append(slot.kind === "space" ? buildSpace(index) : buildSlot(index));
-    });
-
-    const full = slots.length >= MAX_ITEMS;
-    addSoundBtn.disabled = full;
-    addSpaceBtn.disabled = full;
-
-    clearBtn.disabled = !slots.some(
-      slot =>
-        slot.kind === "space" ||
-        (slot.kind === "sound" && slot.value && !slot.locked)
-    );
-
-    $("result").textContent = getWords().join(" ");
-
-    const hasValue = slots.some(slot => slot.kind === "sound" && slot.value);
-    $("confirm").disabled = !hasValue;
-    $("confirm").classList.toggle("opacity-40", !hasValue);
-
-    if (window.lucide) lucide.createIcons();
-  };
-
-  const flipRender = mutate => {
-    const first = new Map();
-    slots.forEach(slot => {
-      const node = slotEls.get(slot);
-      if (node?.isConnected) first.set(slot, node.getBoundingClientRect());
-    });
-
-    mutate();
-    render();
-
-    if (reduceMotion) return;
-
-    slots.forEach(slot => {
-      const before = first.get(slot);
-      const node = slotEls.get(slot);
-      if (!before || !node) return;
-
-      const after = node.getBoundingClientRect();
-      const dx = before.left - after.left;
-      const dy = before.top - after.top;
-      if (!dx && !dy) return;
-
-      node.animate(
-        [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }],
-        { duration: 240, easing: "cubic-bezier(.2,.8,.3,1)" }
-      );
-    });
-  };
-
-  const choose = value => {
-    if (active < 0) return;
-
-    const slot = slots[active];
-    if (!slot || slot.kind !== "sound" || slot.locked) return;
-
-    slot.value = value;
-    slot.type = value ? typeOf[stripTones(value).text] : undefined;
-
-    persist(slots);
-    close();
-  };
-
-  const confirmWord = () => {
-    const words = getWords();
-    if (!words.length) return;
-
-    savedWords.push({
-      id: crypto.randomUUID(),
-      word: words.join(" "),
-      parts: getParts()
-    });
-
-    slots.forEach(slot => {
-      if (slot.kind !== "sound" || slot.locked) return;
-      slot.value = "";
-      slot.type = undefined;
-    });
-
-    active = -1;
-    $("panel").classList.replace("flex", "hidden");
-
-    persist(slots);
-    renderSavedWords();
-    render();
-  };
-
-  const playMixEffect = button => {
-    if (reduceMotion) return;
-
-    const rect = button.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    const radius = Math.hypot(
-      Math.max(cx, window.innerWidth - cx),
-      Math.max(cy, window.innerHeight - cy)
-    );
-
-    const waveMask =
-      "radial-gradient(circle closest-side, " +
-      "transparent 30%, " +
-      "rgba(0,0,0,.18) 60%, " +
-      "rgba(0,0,0,.55) 80%, " +
-      "#000 88%, " +
-      "transparent 100%)";
-
-    const WAVES = [
-      { delay: 0, alpha: 0.85 },
-      { delay: 180, alpha: 0.5 }
-    ];
-
-    const DURATION = 1400;
-
-    WAVES.forEach(({ delay, alpha }) => {
-      const wave = el("div", "fixed z-[60] pointer-events-none rounded-full");
-
-      Object.assign(wave.style, {
-        left: `${cx - radius}px`,
-        top: `${cy - radius}px`,
-        width: `${radius * 2}px`,
-        height: `${radius * 2}px`,
-        background: "linear-gradient(to right, var(--con), var(--vow))",
-        maskImage: waveMask,
-        webkitMaskImage: waveMask,
-        willChange: "transform, opacity",
-        opacity: "0"
-      });
-
-      document.body.append(wave);
-
-      const animation = wave.animate(
-        [
-          { transform: "scale(0)", opacity: alpha },
-          { opacity: alpha * 0.55, offset: 0.5 },
-          { transform: "scale(1)", opacity: 0 }
-        ],
-        {
-          duration: DURATION,
-          delay,
-          easing: "cubic-bezier(.15,.55,.3,1)",
-          fill: "backwards"
-        }
-      );
-
-      animation.onfinish = () => wave.remove();
-      animation.oncancel = () => wave.remove();
-    });
-
-    button.animate(
-      [
-        { boxShadow: "0 0 0 0 color-mix(in srgb, var(--con) 55%, transparent)" },
-        { boxShadow: "0 0 0 16px color-mix(in srgb, var(--con) 0%, transparent)" }
-      ],
-      { duration: 450, easing: "ease-out" }
-    );
-  };
-
-  $("confirm").addEventListener("click", event => {
-    const button = event.currentTarget;
-    if (button.disabled) return;
-
-    playMixEffect(button);
-    confirmWord();
-  });
-
-  const iconBtn =
-    "flex items-center justify-center size-7 shrink-0 rounded-full opacity-70 " +
-    `hover:opacity-100 hover:bg-black/15 ${FOCUS}`;
-
-  const renderAll = () => {
-    renderSavedWords();
-    renderCollections();
-  };
-
-  // Gỡ liên kết giữa chữ trong tệp và các thẻ chữ sắp bị xóa (chữ giữ nguyên màu hiện tại).
   function unlinkWords(ids) {
     let changed = false;
 
@@ -2108,133 +1574,101 @@ function init({ phonetics: phoneticsData }) {
 
   const dropWords = ids => {
     unlinkWords(ids);
-    savedWords = savedWords.filter(word => !ids.has(word.id));
-    collections.forEach(col => {
-      col.wordIds = col.wordIds.filter(wordId => !ids.has(wordId));
-    });
-    persist(slots);
-    renderAll();
+    docWords = docWords.filter(word => !ids.has(word.id));
+    commitWords();
   };
 
   const deleteWord = id => dropWords(new Set([id]));
 
-  const clearListedWords = () => {
-    const words = listedWords();
-    if (!words.length) return;
+  const clearAllWords = () => {
+    if (!docWords.length) return;
 
-    if (
-      !window.confirm(
-        `Xóa tất cả ${words.length} từ trong danh sách từ? ` +
-        "(Các từ nằm trong bộ sưu tập sẽ được giữ lại.)"
-      )
-    ) {
+    if (!window.confirm(`Xóa tất cả ${docWords.length} từ trong danh sách từ của tài liệu này?`)) {
       return;
     }
 
-    dropWords(new Set(words.map(word => word.id)));
-    showToast(`Đã xóa ${words.length} từ`);
+    const count = docWords.length;
+    dropWords(new Set(docWords.map(word => word.id)));
+    showToast(`Đã xóa ${count} từ`);
   };
 
+  const wordsCount = el("span", "text-sm font-semibold", "0 từ");
+  const wordsList = el("div", "flex flex-wrap gap-3 pt-3 min-h-16 rounded-2xl transition");
+
   const clearWordsBtn = mkBtn(
-    `${toolBtnClass} ml-2`,
-    "Xóa nhanh tất cả từ trong danh sách từ",
+    toolBtnClass,
+    "Xóa nhanh tất cả từ trong danh sách từ của tài liệu này",
     '<i data-lucide="trash-2" class="size-4"></i><span class="text-sm font-semibold">Xóa tất cả</span>'
   );
   clearWordsBtn.onclick = event => {
     event.stopPropagation();
-    clearListedWords();
+    clearAllWords();
   };
-  $("count").after(clearWordsBtn);
 
-  const buildWordCard = (item, collectionId = null, compact = false) => {
-    const inCollection = Boolean(collectionId);
-
+  const buildWordCard = item => {
     const card = el(
       "div",
-      "flex items-center gap-1 pl-1 pr-1 max-w-full min-w-0 rounded-2xl font-bold select-none cursor-grab " +
-      KEY + " " + WORD_CARD + " " +
-      (inCollection || compact ? "py-1" : "py-2")
+      "flex items-center gap-1 pl-3 pr-1 py-2 max-w-full min-w-0 rounded-2xl select-none " +
+      KEY + " " + WORD_CARD
     );
 
-    card.title = "Kéo vào bộ sưu tập, vào tệp hoặc vào ô để nạp lại từ này";
-
-    const grip = el(
-      "span",
-      "flex items-center justify-center size-7 shrink-0 opacity-60 touch-none"
-    );
-    grip.dataset.grip = "1";
-    grip.innerHTML = '<i data-lucide="grip-vertical" class="size-4"></i>';
-
-    const label = inCollection
-      ? `Bỏ “${item.word}” khỏi bộ sưu tập`
-      : `Xóa từ ${item.word}`;
+    card.title = "Kéo một màu hoặc nút định dạng (đậm, nghiêng, gạch chân, hoa, thường) vào thẻ";
+    card.dataset.word = item.id;
 
     const remove = mkBtn(
       iconBtn,
-      label,
-      `<i data-lucide="${inCollection ? "x" : "trash-2"}" class="size-4"></i>`
+      `Xóa từ ${item.word}`,
+      '<i data-lucide="trash-2" class="size-4"></i>'
     );
-
     remove.onclick = event => {
       event.stopPropagation();
-      inCollection ? removeFromCollection(collectionId, item.id) : deleteWord(item.id);
+      deleteWord(item.id);
     };
 
     const labelEl = el("span", "px-1 min-w-0 truncate whitespace-nowrap", item.word);
     labelEl.title = item.word;
     labelEl.style.fontSize = "var(--doc-size, 18px)";
     labelEl.style.fontFamily = "var(--doc-font, inherit)";
+    labelEl.style.textTransform = "none";
+    labelEl.style.fontWeight = item.bold ? "700" : "400";
+    labelEl.style.fontStyle = item.italic ? "italic" : "normal";
+    if (item.underline) labelEl.style.textDecoration = "underline";
     paintText(labelEl, item.color);
 
-    // Mọi thẻ chữ đều nhận màu kéo thả, kể cả khi chưa thuộc bộ sưu tập.
-    card.dataset.word = item.id;
-
-    card.append(grip, labelEl, remove);
-    attachWordDrag(card, item, collectionId);
+    card.append(labelEl, remove);
     return card;
   };
 
-  const listedWords = () => {
-    const inCollection = new Set(collections.flatMap(col => col.wordIds));
-    return savedWords.filter(word => !inCollection.has(word.id));
-  };
+  function renderWords() {
+    wordsCount.textContent = `${docWords.length} từ`;
+    const clipTitle =
+      "Bộ nhớ tạm: màu và danh sách từ" + (docWords.length ? ` (${docWords.length} từ)` : "");
+    clipboardBtn.title = clipTitle;
+    clipboardBtn.setAttribute("aria-label", clipTitle);
+    clearWordsBtn.disabled = !docWords.length;
 
-  function renderSavedWords() {
-    const container = $("savedWords");
-    const words = listedWords();
-
-    container.className = "flex flex-wrap gap-3 pt-2 min-h-16 rounded-2xl transition";
-    $("count").textContent = `${words.length} từ`;
-    clearWordsBtn.disabled = !words.length;
-
-    if (!words.length) {
-      container.replaceChildren(
+    if (!docWords.length) {
+      wordsList.replaceChildren(
         el(
           "p",
           "w-full py-6 text-center text-muted",
-          savedWords.length
-            ? "Tất cả từ đã nằm trong bộ sưu tập."
-            : "Chưa có từ nào được lưu."
+          "Tài liệu này chưa có từ nào. Bôi đen chữ trong tệp rồi bấm nút cắt để tạo thẻ từ."
         )
       );
     } else {
-      container.replaceChildren(...words.map(item => buildWordCard(item)));
+      wordsList.replaceChildren(...docWords.map(buildWordCard));
     }
-
-    renderWordsAside();
 
     if (window.lucide) lucide.createIcons();
   }
 
   const RT_STYLE = `
+* { scrollbar-width: none; -ms-overflow-style: none; }
+*::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .rt-doc { caret-color: var(--text); }
 .rt-doc > * { scroll-margin-top: 9rem; }
 .rt-doc ::selection { background: color-mix(in srgb, ${SELECT_BLUE} 45%, transparent); }
 .rt-doc p, .rt-doc h1, .rt-doc h2, .rt-doc h3, .rt-doc h4 { margin: 0; }
-.rt-doc h1 { font-size: 2.25rem; line-height: 1.2; font-weight: 700; margin: .4em 0 .2em; }
-.rt-doc h2 { font-size: 1.875rem; line-height: 1.25; font-weight: 700; margin: .4em 0 .2em; }
-.rt-doc h3 { font-size: 1.5rem; line-height: 1.3; font-weight: 700; margin: .35em 0 .15em; }
-.rt-doc h4 { font-size: 1.25rem; line-height: 1.35; font-weight: 700; margin: .3em 0 .1em; }
 .rt-doc ul { list-style: disc; padding-left: 1.75rem; margin: .25em 0; }
 .rt-doc ol { list-style: decimal; padding-left: 1.75rem; margin: .25em 0; }
 .rt-doc li[style*="text-align: center"], .rt-doc li[style*="text-align: right"],
@@ -2243,18 +1677,18 @@ function init({ phonetics: phoneticsData }) {
   list-style-position: inside;
 }
 .rt-tool[aria-pressed="true"] { background: color-mix(in srgb, var(--text) 16%, transparent); }
-.rt-doc [data-indent="1"] { text-indent: 2em; }
 .rt-doc.rt-doc { font-size: var(--doc-size, 18px); font-family: var(--doc-font, inherit); }
-.rt-doc [data-kind="quote"] {
-  text-align: center; font-style: italic; font-size: 1.15em;
-  margin: .6em 1.5rem .2em;
-}
-.rt-doc [data-kind="cite"] {
-  text-align: right; font-size: .9em; opacity: .75;
-  margin: 0 1.5rem .6em;
-}
 .rt-doc [data-kind="cite"]::before { content: "— "; }
 .rt-doc [data-kind="cite"]::after { content: " —"; }
+.rt-doc [data-nid] {
+  border-bottom: 1px dotted color-mix(in srgb, var(--text) 60%, transparent); cursor: help;
+}
+.rt-doc [data-nid][data-n]::after {
+  content: attr(data-n); font-size: .65em; font-weight: 700; line-height: 0;
+  vertical-align: super; margin-left: 1px; font-style: normal; text-decoration: none;
+  color: ${SELECT_BLUE}; -webkit-text-fill-color: ${SELECT_BLUE}; background: none;
+  user-select: none;
+}
 .rt-doc table { width: 100%; table-layout: fixed; border-collapse: collapse; margin: .5em 0; }
 .rt-doc td {
   border: 1px solid color-mix(in srgb, var(--text) 30%, transparent);
@@ -2283,15 +1717,22 @@ function init({ phonetics: phoneticsData }) {
     document.head.append(style);
   }
 
+  const dynStyle = document.getElementById("rt-style-dynamic") || el("style", "");
+  dynStyle.id = "rt-style-dynamic";
+  document.head.append(dynStyle);
+
   try { document.execCommand("defaultParagraphSeparator", false, "p"); } catch { }
 
-  const sentenceEl = el("section", "mt-12 w-[min(96vw,1200px)] flex flex-col gap-3");
+  const sentenceEl = el(
+    "section",
+    "mx-auto self-center mt-2 w-[min(98vw,1760px)] max-w-full flex flex-col gap-3"
+  );
   const sentenceTitle = el(
     "p",
     "mr-auto min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-muted"
   );
 
-  const iconToolClass = toolBtnClass.replace("px-3", "w-9 justify-center px-0") + " rt-tool";
+  const iconToolClass = toolBtnClass.replace("px-3", "w-8 justify-center px-0") + " rt-tool";
 
   const makeToolBtn = (icon, title) =>
     mkBtn(iconToolClass, title, `<i data-lucide="${icon}" class="size-4"></i>`);
@@ -2344,13 +1785,13 @@ function init({ phonetics: phoneticsData }) {
   const lowerBtn = makeToolBtn("case-lower", "viết thường chữ đang chọn");
   const splitBtn = makeToolBtn(
     "scissors",
-    "Tách chữ đang bôi đen thành thẻ chữ và đưa về danh sách từ / bộ sưu tập (chữ vẫn được giữ trong tệp và liên kết màu với thẻ)"
+    "Tạo thẻ chữ từ chữ đang bôi đen và đưa vào danh sách từ của tài liệu (chữ vẫn được giữ trong tệp và liên kết màu với thẻ)"
   );
 
   const selectClass =
-    `h-9 px-2 rounded-full text-sm font-semibold bg-bg text-text ${BORDER} ${FOCUS}`;
+    `h-8 px-2 rounded-full text-sm font-semibold bg-bg text-text ${BORDER} ${FOCUS}`;
 
-  const fontSelect = el("select", `${selectClass} w-[9.5rem]`);
+  const fontSelect = el("select", `${selectClass} w-[8.5rem]`);
   fontSelect.title = "Phông chữ (bôi đen chữ, hoặc đặt con trỏ trong tiêu đề)";
   fontSelect.setAttribute("aria-label", "Phông chữ");
   fontSelect.append(
@@ -2368,7 +1809,7 @@ function init({ phonetics: phoneticsData }) {
   const sizeLabel = el("span", "truncate", "Mặc định");
   const sizeBtn = el(
     "button",
-    `${selectClass} w-[7rem] flex items-center justify-between gap-1`
+    `${selectClass} w-[6.5rem] flex items-center justify-between gap-1`
   );
   sizeBtn.type = "button";
   sizeBtn.title = "Cỡ chữ (bôi đen chữ, hoặc đặt con trỏ trong tiêu đề)";
@@ -2428,13 +1869,13 @@ function init({ phonetics: phoneticsData }) {
     if (!selectionInEditor()) setSizeValue("");
   };
 
-  // Không bôi đen chữ: đổi cỡ chữ / phông chữ mặc định, dùng chung cho thẻ chữ và tệp.
   const setDocDefaults = ({ size, font }) => {
     if (size !== undefined) docSize = cleanSize(size) ?? DEFAULT_DOC_SIZE;
     if (font !== undefined) docFont = cleanFont(font) ?? DEFAULT_DOC_FONT;
 
     applyDocDefaults();
-    persist(slots);
+    fitPoems();
+    persist();
     refreshDefaultsUi();
     showToast(
       `Chữ mặc định: ${docSize} px · ${defaultFontName()} (áp dụng cho thẻ chữ và tệp)`
@@ -2459,6 +1900,14 @@ function init({ phonetics: phoneticsData }) {
   const indentBtn = makeToolBtn("indent-increase", "Thụt đầu dòng (lùi từ đầu tiên vào)");
   const quoteBtn = makeToolBtn("quote", "Trích dẫn (căn giữa, in nghiêng; có thể ghi tên tác giả)");
   const citeBtn = makeToolBtn("pen-line", "Thêm tác giả / chú thích dưới trích dẫn (căn phải, có dấu — hai đầu)");
+  const poemBtn = makeToolBtn(
+    "feather",
+    "Thơ tự do: chữ căn trái, cả bài thơ nằm giữa trang (mỗi dòng một đoạn, để trống một dòng để ngắt khổ)"
+  );
+  const dropcapBtn = makeToolBtn(
+    "book-text",
+    "Đoạn tiểu thuyết: chữ cái đầu to bằng 3 dòng, 3 dòng đầu viết bên phải, từ dòng 4 viết xuống dưới chữ cái"
+  );
   const imageBtn = makeToolBtn("image", "Chèn ảnh (SVG/PNG từ CDN hoặc tệp)");
   const tableBtn = makeToolBtn("table", "Chèn bảng");
   const moveUpBtn = makeToolBtn("arrow-up", "Chuyển đoạn lên trên (Alt+↑)");
@@ -2469,7 +1918,30 @@ function init({ phonetics: phoneticsData }) {
   const clearSentenceBtn = makeToolBtn("eraser", "Xóa nội dung tệp");
   const exportSentenceBtn = makeToolBtn("download", "Xuất tài liệu ra tệp JSON (giữ Shift để đổi tên tệp)");
   const importSentenceBtn = makeToolBtn("upload", "Nhập tài liệu từ tệp JSON");
-  const legendBtn = makeToolBtn("palette", "Chú giải màu");
+  const legendBtn = makeToolBtn("palette", "Đặt chú giải màu");
+  const advBtn = makeToolBtn(
+    "sliders-horizontal",
+    "Tùy chỉnh nâng cao: tiêu đề, đoạn văn, trích dẫn, thơ, chữ cái đầu to, lề"
+  );
+  advBtn.setAttribute("aria-pressed", "false");
+  const noteBtn = makeToolBtn(
+    "superscript",
+    "Chú giải nghĩa (chỉ số trên): bôi đen chữ rồi nhập nghĩa; đặt con trỏ vào chữ đã chú giải để sửa"
+  );
+  const notesBtn = makeToolBtn("book-open", "Xem tất cả chú giải nghĩa");
+
+  const outlineToggleBtn = makeToolBtn(
+    "list-tree",
+    "Bật/tắt mục lục (hiện bên trái, kéo tiêu đề để sắp xếp lại nội dung)"
+  );
+  const legendToggleBtn = makeToolBtn("tags", "Bật/tắt chú giải màu (hiện bên trái)");
+  outlineToggleBtn.setAttribute("aria-pressed", String(showOutline));
+  legendToggleBtn.setAttribute("aria-pressed", String(showLegend));
+
+  const clipboardBtn = makeToolBtn(
+    "clipboard",
+    "Bộ nhớ tạm: màu và danh sách từ (kéo thả trong màn hình này)"
+  );
 
   const filesLabel = el("span", "text-sm font-semibold", "Tệp");
   const filesBtn = mkBtn(
@@ -2495,8 +1967,7 @@ function init({ phonetics: phoneticsData }) {
   );
   editor.contentEditable = "true";
   editor.spellcheck = false;
-  editor.dataset.sentence = "1";
-  editor.dataset.placeholder = "Gõ trực tiếp hoặc kéo các thẻ từ vào tệp…";
+  editor.dataset.placeholder = "Gõ nội dung tại đây…";
   editor.setAttribute("role", "textbox");
   editor.setAttribute("aria-multiline", "true");
   editor.setAttribute("aria-label", "Soạn tệp");
@@ -2505,22 +1976,250 @@ function init({ phonetics: phoneticsData }) {
     node.style.display = shown ? "" : "none";
   };
 
-  const SIDE_CLASS =
+  function fitPoems() {
+    let group = [];
+
+    const flush = () => {
+      if (!group.length) return;
+
+      group.forEach(node => {
+        node.style.width = "max-content";
+        node.dataset.pfit = "1";
+      });
+
+      const width = Math.ceil(
+        Math.max(0, ...group.map(node => node.getBoundingClientRect().width))
+      );
+
+      group.forEach(node => {
+        node.style.width = `${width}px`;
+      });
+
+      group = [];
+    };
+
+    [...editor.children].forEach(node => {
+      if (node.dataset?.kind === "poem") {
+        group.push(node);
+        return;
+      }
+
+      flush();
+
+      if (node.dataset?.pfit) {
+        node.style.width = "";
+        delete node.dataset.pfit;
+      }
+    });
+
+    flush();
+  }
+
+  let poemFitWidth = 0;
+  if (typeof ResizeObserver === "function") {
+    new ResizeObserver(() => {
+      const width = editor.clientWidth;
+      if (width === poemFitWidth) return;
+      poemFitWidth = width;
+      fitPoems();
+    }).observe(editor);
+  }
+
+  const applyDocStyle = () => {
+    dynStyle.textContent = docStyleCss(docStyle);
+
+    const p = docStyle.page;
+    editor.style.padding = `${p.top}px ${p.right}px ${p.bottom}px ${p.left}px`;
+
+    fitPoems();
+  };
+
+  const OUTLINE_CLASS =
     "min-w-0 w-full max-h-[40vh] overflow-y-auto overflow-x-hidden " +
     "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden " +
     "lg:max-h-[calc(100vh-2rem)] lg:sticky lg:top-4 lg:self-start " +
-    `flex flex-col gap-2 p-3 rounded-2xl border-2 border-dashed ${DIVIDER}`;
+    "flex flex-col gap-4 py-3 pr-2 lg:col-start-1 lg:row-start-1";
 
-  const markedAside = el("aside", `${SIDE_CLASS} lg:col-start-1 lg:row-start-1`);
-  setShown(markedAside, false);
-
-  const outlineAside = el("aside", `${SIDE_CLASS} lg:col-start-3 lg:row-start-1`);
+  const outlineAside = el("div", "flex flex-col gap-2");
   setShown(outlineAside, false);
   const outlineList = el("nav", "flex flex-col");
   outlineAside.append(
     el("p", "px-2 text-xs font-semibold uppercase tracking-wide text-muted", "Mục lục"),
     outlineList
   );
+
+  const ADV_CLASS =
+    "min-w-0 w-full max-h-[60vh] overflow-y-auto overflow-x-hidden " +
+    "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden " +
+    "lg:max-h-[calc(100vh-2rem)] lg:sticky lg:top-4 lg:self-start " +
+    `flex flex-col gap-2 p-3 rounded-2xl border-2 border-dashed ${DIVIDER} ` +
+    "lg:col-start-3 lg:row-start-1";
+
+  const advAside = el("aside", ADV_CLASS);
+  setShown(advAside, false);
+
+  const styleSyncers = [];
+  const refreshStyleInputs = () => styleSyncers.forEach(fn => fn());
+
+  const commitStyle = () => {
+    applyDocStyle();
+    schedulePersist();
+  };
+
+  const buildStyleField = (group, key, label, unit) => {
+    const spec = STYLE_SCHEMA[group][key];
+    const text = unit ? `${label} (${unit})` : label;
+    let input;
+
+    if (spec.t === "num") {
+      input = el("input", `${FIELD} w-20 px-2`);
+      input.type = "number";
+      input.min = String(spec.min);
+      input.max = String(spec.max);
+      input.step = String(spec.step);
+      input.setAttribute("aria-label", `${label} — ${group}`);
+
+      input.addEventListener("input", () => {
+        if (input.value === "") return;
+        const n = Number(input.value);
+        if (!Number.isFinite(n)) return;
+        docStyle[group][key] = Math.round(clamp(n, spec.min, spec.max) * 100) / 100;
+        commitStyle();
+      });
+      input.addEventListener("change", () => {
+        input.value = String(docStyle[group][key]);
+      });
+      input.addEventListener("keydown", event => {
+        if (!event.isComposing && event.key === "Enter") input.blur();
+      });
+
+      styleSyncers.push(() => {
+        if (document.activeElement !== input) input.value = String(docStyle[group][key]);
+      });
+    } else if (spec.t === "pick") {
+      input = el("select", `${selectClass} w-28`);
+      input.setAttribute("aria-label", `${label} — ${group}`);
+      spec.opts.forEach(value => input.append(new Option(STYLE_PICK_LABELS[value] ?? value, value)));
+
+      input.addEventListener("change", () => {
+        docStyle[group][key] = cleanStyleValue(spec, input.value);
+        commitStyle();
+      });
+
+      styleSyncers.push(() => {
+        input.value = docStyle[group][key];
+      });
+    } else {
+      input = el("input", "size-4 accent-[#3b82f6]");
+      input.type = "checkbox";
+      input.setAttribute("aria-label", `${label} — ${group}`);
+
+      input.addEventListener("change", () => {
+        docStyle[group][key] = input.checked;
+        commitStyle();
+      });
+
+      styleSyncers.push(() => {
+        input.checked = Boolean(docStyle[group][key]);
+      });
+    }
+
+    return el(
+      "label",
+      "flex items-center justify-between gap-2 text-sm",
+      "",
+      el("span", "min-w-0 truncate", text),
+      input
+    );
+  };
+
+  const buildStyleSection = ([title, group, fields], open) => {
+    const details = el("details", `rounded-xl ${BORDER}`);
+    details.open = open;
+
+    const summary = el(
+      "summary",
+      "cursor-pointer select-none rounded-xl px-3 py-2 text-sm font-semibold " +
+      `hover:bg-[color-mix(in_srgb,var(--text)_8%,transparent)] ${FOCUS}`,
+      title
+    );
+
+    const reset = el("button", `${toolBtnClass} justify-center`, "Đặt lại mục này");
+    reset.type = "button";
+    reset.onclick = event => {
+      event.stopPropagation();
+      docStyle[group] = cleanDocStyle({})[group];
+      commitStyle();
+      refreshStyleInputs();
+    };
+
+    details.append(
+      summary,
+      el(
+        "div",
+        "flex flex-col gap-2 px-3 pb-3 pt-1",
+        "",
+        ...fields.map(([key, label, unit]) => buildStyleField(group, key, label, unit)),
+        reset
+      )
+    );
+
+    return details;
+  };
+
+  const resetAllStyle = () => {
+    docStyle = cleanDocStyle({});
+    commitStyle();
+    refreshStyleInputs();
+    showToast("Đã đặt lại toàn bộ tùy chỉnh nâng cao");
+  };
+
+  const advResetBtn = mkBtn(
+    `${toolBtnClass} shrink-0`,
+    "Đặt lại tất cả thông số về mặc định",
+    '<i data-lucide="rotate-ccw" class="size-4"></i>'
+  );
+  advResetBtn.onclick = event => {
+    event.stopPropagation();
+    resetAllStyle();
+  };
+
+  const advCloseBtn = mkBtn(
+    `${iconBtn} text-muted`,
+    "Đóng tùy chỉnh nâng cao",
+    '<i data-lucide="x" class="size-4"></i>'
+  );
+
+  advAside.append(
+    el(
+      "div",
+      "flex items-center gap-2",
+      "",
+      el("p", "min-w-0 flex-1 truncate text-sm font-semibold", "Tùy chỉnh nâng cao"),
+      advResetBtn,
+      advCloseBtn
+    ),
+    el(
+      "p",
+      "text-xs text-muted",
+      "Thông số áp dụng ngay cho toàn bộ tệp, được lưu cùng trình duyệt và đi kèm khi xuất JSON."
+    ),
+    ...STYLE_SECTIONS.map((section, i) => buildStyleSection(section, i === 0))
+  );
+
+  let advOpen = false;
+  const setAdvOpen = open => {
+    advOpen = open;
+    setShown(advAside, open);
+    advBtn.setAttribute("aria-pressed", String(open));
+  };
+  advCloseBtn.onclick = event => {
+    event.stopPropagation();
+    setAdvOpen(false);
+  };
+
+  refreshStyleInputs();
+  applyDocStyle();
 
   let modal = null;
 
@@ -2531,7 +2230,7 @@ function init({ phonetics: phoneticsData }) {
     modal = null;
   };
 
-  const openModal = (title, renderBody, kind, footer = null) => {
+  const openModal = (title, renderBody, kind, footer = null, wide = false) => {
     closeModal();
 
     const overlay = el(
@@ -2540,7 +2239,8 @@ function init({ phonetics: phoneticsData }) {
     );
     const dialog = el(
       "div",
-      `w-full max-w-md max-h-[80vh] flex flex-col gap-3 p-5 rounded-2xl bg-bg text-text ${SHADOW}`
+      `w-full ${wide ? "max-w-3xl max-h-[88vh]" : "max-w-md max-h-[80vh]"} flex flex-col gap-3 ` +
+      `p-5 rounded-2xl bg-bg text-text ${SHADOW}`
     );
     dialog.setAttribute("role", "dialog");
     dialog.setAttribute("aria-modal", "true");
@@ -2573,11 +2273,11 @@ function init({ phonetics: phoneticsData }) {
 
     overlay.addEventListener("click", event => {
       event.stopPropagation();
-      if (event.target === overlay) closeModal();
+      if (event.target === overlay && !suppressClick) closeModal();
     });
 
     const onKey = event => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || dragActive) return;
       const focus = document.activeElement;
       if (focus instanceof HTMLInputElement && !overlay.contains(focus)) return;
       event.stopPropagation();
@@ -2597,7 +2297,7 @@ function init({ phonetics: phoneticsData }) {
 
   const legendStrip = el(
     "div",
-    "flex flex-wrap items-center gap-x-4 gap-y-1 px-3 text-sm"
+    "flex flex-col gap-1 text-sm"
   );
   setShown(legendStrip, false);
 
@@ -2619,42 +2319,51 @@ function init({ phonetics: phoneticsData }) {
     return [...seen];
   };
 
-  let legendSig = "";
+  let legendSig = null;
 
   const refreshLegendStrip = () => {
+    setShown(legendStrip, showLegend);
+    if (!showLegend) return;
+
     const items = usedSentenceColors()
       .filter(color => colorLegend[color])
       .map(color => [color, colorLegend[color]]);
-
-    setShown(legendStrip, items.length > 0);
 
     const sig = JSON.stringify(items);
     if (sig === legendSig) return;
     legendSig = sig;
 
     legendStrip.replaceChildren(
-      el("span", "text-xs font-semibold uppercase tracking-wide text-muted", "Chú giải"),
-      ...items.map(([color, label]) => {
-        const chip = mkBtn(
-          "flex items-center gap-1.5 rounded-lg px-1 py-0.5 text-sm " +
-          `hover:bg-[color-mix(in_srgb,var(--text)_8%,transparent)] ${FOCUS}`,
-          "Sửa chú giải màu"
-        );
+      el("span", "px-2 text-xs font-semibold uppercase tracking-wide text-muted", "Chú giải"),
+      ...(items.length
+        ? items.map(([color, label]) => {
+          const chip = mkBtn(
+            "flex w-full items-start gap-2 rounded-lg px-2 py-1 text-left text-sm " +
+            `hover:bg-[color-mix(in_srgb,var(--text)_8%,transparent)] ${FOCUS}`,
+            "Sửa chú giải màu"
+          );
 
-        const dot = el("span", "size-3 shrink-0 rounded-full");
-        paintBackground(dot, color);
+          const dot = el("span", "mt-1 size-3 shrink-0 rounded-full");
+          paintBackground(dot, color);
 
-        chip.append(dot, el("span", "min-w-0", label));
-        chip.onclick = event => {
-          event.stopPropagation();
-          openLegendModal();
-        };
-        return chip;
-      })
+          chip.append(dot, el("span", "min-w-0 break-words", label));
+          chip.onclick = event => {
+            event.stopPropagation();
+            openLegendModal();
+          };
+          return chip;
+        })
+        : [
+          el(
+            "p",
+            "px-2 py-1 text-xs text-muted",
+            "Chưa có chú giải cho màu đang dùng. Bấm nút bảng màu trên thanh công cụ để đặt ý nghĩa cho màu."
+          )
+        ])
     );
   };
 
-  const group = (...buttons) => el("div", "flex items-center gap-1", "", ...buttons);
+  const group = (...buttons) => el("div", "flex items-center gap-0.5", "", ...buttons);
 
   let selectedImg = null;
   let pickedAt = 0;
@@ -2765,9 +2474,39 @@ function init({ phonetics: phoneticsData }) {
   );
   setShown(tableBar, false);
 
+  const TOOL_ROW_CLASS =
+    "flex flex-wrap items-center justify-between gap-x-2 gap-y-2";
+
+  const toolRow = el(
+    "div",
+    "flex flex-col gap-2",
+    "",
+    el(
+      "div",
+      TOOL_ROW_CLASS,
+      "",
+      group(boldBtn, italicBtn, underlineBtn, plainBtn),
+      group(upperBtn, lowerBtn),
+      group(fontSelect, sizeWrap),
+      group(...headingBtns),
+      group(noteBtn, notesBtn, splitBtn, clipboardBtn)
+    ),
+    el(
+      "div",
+      TOOL_ROW_CLASS,
+      "",
+      group(...alignBtns),
+      group(bulletBtn, numberBtn),
+      group(indentBtn, quoteBtn, citeBtn, poemBtn, dropcapBtn),
+      group(imageBtn, tableBtn),
+      group(moveUpBtn, moveDownBtn),
+      group(outlineToggleBtn, legendToggleBtn)
+    )
+  );
+
   const stickyBar = el(
     "div",
-    "sticky top-0 z-30 flex flex-col gap-3 py-2 bg-bg " +
+    "sticky top-0 z-30 -mt-2 flex flex-col gap-2 py-2 bg-bg " +
     "border-b border-[color-mix(in_srgb,var(--text)_12%,transparent)]",
     "",
     el(
@@ -2777,6 +2516,7 @@ function init({ phonetics: phoneticsData }) {
       sentenceTitle,
       filesBtn,
       legendBtn,
+      advBtn,
       saveSentenceBtn,
       copySentenceBtn,
       clearSentenceBtn,
@@ -2784,20 +2524,7 @@ function init({ phonetics: phoneticsData }) {
       importSentenceBtn,
       sentenceFile
     ),
-    el(
-      "div",
-      "flex flex-wrap items-center gap-x-3 gap-y-2",
-      "",
-      group(boldBtn, italicBtn, underlineBtn, plainBtn),
-      group(upperBtn, lowerBtn, splitBtn),
-      group(fontSelect, sizeWrap),
-      group(...headingBtns),
-      group(...alignBtns),
-      group(bulletBtn, numberBtn),
-      group(indentBtn, quoteBtn, citeBtn),
-      group(imageBtn, tableBtn),
-      group(moveUpBtn, moveDownBtn)
-    ),
+    toolRow,
     imgBar,
     tableBar
   );
@@ -2807,11 +2534,12 @@ function init({ phonetics: phoneticsData }) {
     "min-w-0 w-full flex flex-col gap-3 lg:col-start-2 lg:row-start-1",
     "",
     stickyBar,
-    editor,
-    legendStrip
+    editor
   );
 
-  const toolRow = stickyBar.children[1];
+  const leftCol = el("aside", OUTLINE_CLASS, "", outlineAside, legendStrip);
+  setShown(leftCol, showOutline || showLegend);
+
   let toolsCollapsed = false;
 
   const collapseBtn = mkBtn(iconToolClass, "", "");
@@ -2838,13 +2566,15 @@ function init({ phonetics: phoneticsData }) {
   stickyBar.children[0].append(collapseBtn);
   applyCollapse();
 
+  bind(advBtn, () => setAdvOpen(!advOpen));
+
   const workspace = el(
     "div",
-    "grid items-start gap-4 lg:grid-cols-[15rem_minmax(0,1fr)_13rem]",
+    "grid w-full items-start gap-3 lg:grid-cols-[14rem_minmax(0,1fr)_14rem]",
     "",
-    markedAside,
     centerCol,
-    outlineAside
+    leftCol,
+    advAside
   );
 
   sentenceEl.append(workspace);
@@ -2902,24 +2632,30 @@ function init({ phonetics: phoneticsData }) {
   let persistTimer = 0;
   const schedulePersist = () => {
     clearTimeout(persistTimer);
-    persistTimer = setTimeout(() => persist(slots), 250);
+    persistTimer = setTimeout(() => persist(), 250);
   };
 
   window.addEventListener("pagehide", () => {
     clearTimeout(persistTimer);
-    persist(slots);
+    persist();
   });
 
   const findSaved = id => savedSentences.find(s => s.id === id) || null;
   const currentSaved = () => findSaved(currentSavedId);
 
-  const sameBlocks = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
   const isDirty = () => {
     const saved = currentSaved();
-    // Chuẩn hóa lại bản đã lưu để màu liên kết theo thẻ chữ không bị tính là thay đổi.
-    if (saved) return !sameBlocks(cleanBlocks(saved.blocks), sentenceBlocks);
-    return Boolean(sentenceString().trim());
+
+    if (saved) {
+      return (
+        !sameJson(saved.words, docWords) ||
+        !sameJson(withWords(saved.words, () => cleanBlocks(saved.blocks)), sentenceBlocks)
+      );
+    }
+
+    return Boolean(sentenceString().trim()) || docWords.length > 0;
   };
 
   const confirmDiscard = () =>
@@ -2944,10 +2680,47 @@ function init({ phonetics: phoneticsData }) {
     return name;
   };
 
-  let outlineSig = "";
+  let outlineSig = null;
+  let outlineClickGuard = false;
+
+  const headingEls = () => [...editor.querySelectorAll("h1,h2,h3,h4")];
+  const headingLevel = h => Number(h.tagName[1]);
+  const sectionNodes = (hs, index) => {
+    const level = headingLevel(hs[index]);
+    const nodes = [hs[index]];
+    let node = hs[index].nextElementSibling;
+
+    while (node && !(/^H[1-4]$/.test(node.tagName) && headingLevel(node) <= level)) {
+      nodes.push(node);
+      node = node.nextElementSibling;
+    }
+
+    return nodes;
+  };
+
+  const sectionHeadingEnd = (hs, index) => {
+    const level = headingLevel(hs[index]);
+    let end = index + 1;
+    while (end < hs.length && headingLevel(hs[end]) > level) end++;
+    return end;
+  };
+
+  const flashHeading = index => {
+    const heading = headingEls()[index];
+    if (!heading) return;
+
+    heading.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "nearest" });
+
+    if (!reduceMotion) {
+      heading.animate(
+        [{ background: "color-mix(in srgb, var(--hl) 35%, transparent)" }, { background: "transparent" }],
+        { duration: 900, easing: "ease-out" }
+      );
+    }
+  };
 
   const goToHeading = index => {
-    const heading = editor.querySelectorAll("h1,h2,h3,h4")[index];
+    const heading = headingEls()[index];
     if (!heading) return;
 
     heading.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
@@ -2961,40 +2734,258 @@ function init({ phonetics: phoneticsData }) {
     }
   };
 
+  const moveSection = (from, to, after) => {
+    const hs = headingEls();
+    const src = hs[from];
+    const dest = hs[to];
+    if (!src || !dest || from === to) return -1;
+
+    const nodes = sectionNodes(hs, from);
+    if (nodes.includes(dest)) return -1;
+
+    let ref = dest;
+    if (after) {
+      const tail = sectionNodes(hs, to).filter(n => !nodes.includes(n));
+      ref = tail[tail.length - 1] ?? dest;
+    }
+
+    if (after) ref.after(...nodes);
+    else ref.before(...nodes);
+
+    const newIndex = headingEls().indexOf(src);
+
+    normalizeEditor();
+    flashHeading(newIndex);
+    return newIndex;
+  };
+
+  const stepHeading = (index, dir) => {
+    const hs = headingEls();
+    if (!hs[index]) return;
+
+    const level = headingLevel(hs[index]);
+    let j;
+
+    if (dir < 0) {
+      j = index - 1;
+      while (j >= 0 && headingLevel(hs[j]) > level) j--;
+    } else {
+      j = sectionHeadingEnd(hs, index);
+    }
+
+    if (j < 0 || j >= hs.length || headingLevel(hs[j]) !== level) {
+      showToast("Không thể di chuyển thêm");
+      return;
+    }
+
+    const next = moveSection(index, j, dir > 0);
+    if (next >= 0) outlineList.children[next]?.focus();
+  };
+
+  const startOutlineDrag = (down, from, label) => {
+    if (down.pointerType === "mouse" && down.button !== 0) return;
+
+    const pointerId = down.pointerId;
+    const hs = headingEls();
+    const end = sectionHeadingEnd(hs, from);
+
+    let dragging = false;
+    let ghost = null;
+    let target = null;
+    let after = false;
+
+    const dimmed = () => [...outlineList.children].slice(from, end);
+
+    const mark = (item, y) => {
+      if (target) target.style.boxShadow = "";
+      target = null;
+      if (!item) return;
+
+      const to = Number(item.dataset.oi);
+      if (to >= from && to < end) return;
+
+      const rect = item.getBoundingClientRect();
+      after = y > rect.top + rect.height / 2;
+      target = item;
+      item.style.boxShadow = after
+        ? "inset 0 -3px 0 0 var(--hl)"
+        : "inset 0 3px 0 0 var(--hl)";
+    };
+
+    const begin = () => {
+      dragging = true;
+      outlineClickGuard = true;
+
+      ghost = el(
+        "div",
+        `fixed left-0 top-0 z-[90] max-w-[14rem] truncate pointer-events-none px-3 py-1 ` +
+        `rounded-lg bg-bg text-text text-sm font-semibold ${BORDER} ${SHADOW}`,
+        label || "(Tiêu đề trống)"
+      );
+      ghost.style.transform = `translate3d(${down.clientX + 12}px, ${down.clientY + 12}px, 0)`;
+      document.body.append(ghost);
+
+      dimmed().forEach(node => { node.style.opacity = "0.4"; });
+
+      document.body.style.cursor = "grabbing";
+      document.body.style.userSelect = "none";
+      window.addEventListener("keydown", onKey);
+    };
+
+    const cleanup = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      window.removeEventListener("keydown", onKey);
+    };
+
+    const finish = drop => {
+      cleanup();
+
+      if (!dragging) return;
+
+      const to = target ? Number(target.dataset.oi) : -1;
+      const placeAfter = after;
+
+      if (target) target.style.boxShadow = "";
+      dimmed().forEach(node => { node.style.opacity = ""; });
+      ghost?.remove();
+
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+
+      setTimeout(() => { outlineClickGuard = false; }, 60);
+
+      if (drop && to >= 0) {
+        const next = moveSection(from, to, placeAfter);
+        if (next >= 0) showToast("Đã sắp xếp lại mục lục và nội dung tệp");
+      }
+    };
+
+    const onMove = e => {
+      if (e.pointerId !== pointerId) return;
+
+      if (!dragging) {
+        if (Math.hypot(e.clientX - down.clientX, e.clientY - down.clientY) < DRAG_THRESHOLD) return;
+        begin();
+      }
+
+      ghost.style.transform = `translate3d(${e.clientX + 12}px, ${e.clientY + 12}px, 0)`;
+
+      const item = document.elementFromPoint(e.clientX, e.clientY)?.closest("[data-oi]");
+      mark(item && outlineList.contains(item) ? item : null, e.clientY);
+    };
+
+    const onUp = e => {
+      if (e.pointerId === pointerId) finish(true);
+    };
+
+    const onCancel = e => {
+      if (e.pointerId === pointerId) finish(false);
+    };
+
+    const onKey = e => {
+      if (e.key === "Escape") finish(false);
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+  };
+
   const refreshOutline = () => {
-    const items = [...editor.querySelectorAll("h1,h2,h3,h4")].map(h => ({
-      level: Number(h.tagName[1]),
+    setShown(outlineAside, showOutline);
+    if (!showOutline) return;
+
+    const items = headingEls().map(h => ({
+      level: headingLevel(h),
       text: h.textContent.replace(/\u200b/g, "").trim()
     }));
-
-    setShown(outlineAside, items.length > 0);
 
     const sig = items.map(i => `${i.level}:${i.text}`).join("\n");
     if (sig === outlineSig) return;
     outlineSig = sig;
 
+    if (!items.length) {
+      outlineList.replaceChildren(
+        el(
+          "p",
+          "px-2 py-1 text-xs text-muted",
+          "Chưa có tiêu đề. Dùng nút H1–H4 trên thanh công cụ để tạo tiêu đề."
+        )
+      );
+      return;
+    }
+
     outlineList.replaceChildren(
       ...items.map((item, index) => {
         const button = el(
           "button",
-          "w-full truncate text-left rounded-lg py-1 pr-2 text-sm text-text " +
+          "flex w-full items-center gap-1 rounded-lg py-1 pr-2 text-left text-sm text-text " +
           `hover:bg-[color-mix(in_srgb,var(--text)_10%,transparent)] ${FOCUS} ` +
-          (item.level === 1 ? "font-bold" : item.level === 2 ? "font-semibold" : ""),
-          item.text || "(Tiêu đề trống)"
+          (item.level === 1 ? "font-bold" : item.level === 2 ? "font-semibold" : "")
         );
         button.type = "button";
-        button.title = item.text;
-        button.style.paddingLeft = `${0.5 + (item.level - 1) * 0.75}rem`;
+        button.dataset.oi = String(index);
+        button.title = `${item.text || "(Tiêu đề trống)"}\nKéo để sắp xếp lại (hoặc Alt+↑/↓)`;
+        button.style.paddingLeft = `${0.25 + (item.level - 1) * 0.75}rem`;
+
+        const grip = el("span", "shrink-0 cursor-grab select-none leading-none text-muted opacity-60", "⋮⋮");
+        grip.dataset.grip = "1";
+        grip.style.touchAction = "none";
+
+        button.append(grip, el("span", "min-w-0 flex-1 truncate", item.text || "(Tiêu đề trống)"));
+
+        button.addEventListener("pointerdown", event => {
+          if (event.pointerType === "touch" && !event.target.closest("[data-grip]")) return;
+          startOutlineDrag(event, index, item.text);
+        });
+
         button.onclick = event => {
           event.stopPropagation();
+          if (outlineClickGuard) return;
           goToHeading(index);
         };
+
+        button.addEventListener("keydown", event => {
+          if (event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+            event.preventDefault();
+            stepHeading(index, event.key === "ArrowUp" ? -1 : 1);
+          }
+        });
+
         return button;
       })
     );
   };
 
-  const refreshSentenceUi = () => {
+  const applyPanels = () => {
+    setShown(leftCol, showOutline || showLegend);
+
+    outlineToggleBtn.setAttribute("aria-pressed", String(showOutline));
+    legendToggleBtn.setAttribute("aria-pressed", String(showLegend));
+
+    outlineSig = null;
+    legendSig = null;
+    refreshOutline();
+    refreshLegendStrip();
+  };
+
+  bind(outlineToggleBtn, () => {
+    showOutline = !showOutline;
+    applyPanels();
+    persist();
+    showToast(showOutline ? "Đã bật mục lục" : "Đã tắt mục lục");
+  });
+
+  bind(legendToggleBtn, () => {
+    showLegend = !showLegend;
+    applyPanels();
+    persist();
+    showToast(showLegend ? "Đã bật chú giải màu" : "Đã tắt chú giải màu");
+  });
+
+  function refreshSentenceUi() {
     const text = sentenceString();
     const trimmed = text.trim();
     const words = trimmed ? trimmed.split(/\s+/).length : 0;
@@ -3008,12 +2999,22 @@ function init({ phonetics: phoneticsData }) {
 
     saveSentenceBtn.disabled = !trimmed;
     copySentenceBtn.disabled = !trimmed;
-    clearSentenceBtn.disabled = !trimmed;
+    clearSentenceBtn.disabled = !trimmed && !docWords.length;
     exportSentenceBtn.disabled = !trimmed && !savedSentences.length;
 
+    fitPoems();
     refreshOutline();
     refreshLegendStrip();
-  };
+
+    const noteCount = numberNotes(editor).size;
+    const notesTitle = noteCount
+      ? `Xem tất cả chú giải nghĩa (${noteCount})`
+      : "Xem tất cả chú giải nghĩa";
+    notesBtn.title = notesTitle;
+    notesBtn.setAttribute("aria-label", notesTitle);
+
+    if (modal?.kind === "notes") modal.refresh();
+  }
 
   const syncFromEditor = () => {
     sentenceBlocks = domToBlocks(editor);
@@ -3033,242 +3034,15 @@ function init({ phonetics: phoneticsData }) {
     schedulePersist();
   };
 
-  const setSentence = (blocks, savedId = null) => {
+  const setDocument = (blocks, words, savedId = null) => {
+    docWords = cleanWords(words);
     sentenceBlocks = cleanBlocks(blocks);
     currentSavedId = savedId;
     renderBlocks(sentenceBlocks, editor);
+    renderWords();
     refreshSentenceUi();
     syncBars();
-    persist(slots);
-  };
-
-  const escapeHtml = value =>
-    value.replace(/[&<>"']/g, ch => (
-      { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]
-    ));
-
-  const rangeFromPoint = (x, y) => {
-    if (document.caretRangeFromPoint) return document.caretRangeFromPoint(x, y);
-
-    const pos = document.caretPositionFromPoint?.(x, y);
-    if (!pos) return null;
-
-    const range = document.createRange();
-    range.setStart(pos.offsetNode, pos.offset);
-    range.collapse(true);
-    return range;
-  };
-
-  const dropCaret = el("div", "fixed z-[66] pointer-events-none bg-text");
-  Object.assign(dropCaret.style, {
-    display: "none",
-    left: "0",
-    top: "0",
-    width: "2px",
-    boxShadow: "0 0 0 1px var(--bg)",
-    willChange: "transform"
-  });
-  document.body.append(dropCaret);
-
-  const hideDropCaret = () => {
-    dropCaret.style.display = "none";
-  };
-
-  const updateDropCaret = (x, y) => {
-    const hit = document.elementFromPoint(x, y);
-    if (!hit || !editor.contains(hit)) {
-      hideDropCaret();
-      return;
-    }
-
-    const range = rangeFromPoint(x, y);
-    if (!range || !editor.contains(range.startContainer)) {
-      hideDropCaret();
-      return;
-    }
-
-    let rect = [...range.getClientRects()].find(r => r.height > 0);
-
-    if (!rect) {
-      const node =
-        range.startContainer.nodeType === Node.TEXT_NODE
-          ? range.startContainer.parentElement
-          : range.startContainer;
-      const box = node.getBoundingClientRect();
-      const style = getComputedStyle(node);
-      const pad = node === editor;
-
-      rect = {
-        left: box.left + (pad ? parseFloat(style.paddingLeft) || 0 : 0),
-        top: box.top + (pad ? parseFloat(style.paddingTop) || 0 : 0),
-        height: parseFloat(style.lineHeight) || 28
-      };
-    }
-
-    dropCaret.style.display = "block";
-    dropCaret.style.height = `${rect.height}px`;
-    dropCaret.style.transform = `translate3d(${rect.left - 1.5}px, ${rect.top}px, 0)`;
-  };
-
-  // Chèn thẻ chữ vào tệp: chữ được liên kết (data-wid) với thẻ nên màu luôn đồng bộ.
-  function insertWordIntoEditor(item, point, color) {
-    let range = point ? rangeFromPoint(point.x, point.y) : null;
-
-    if (!range || !editor.contains(range.startContainer)) {
-      range = document.createRange();
-      range.selectNodeContents(editor);
-      range.collapse(false);
-    }
-
-    const before = document.createRange();
-    before.selectNodeContents(editor);
-    before.setEnd(range.startContainer, range.startOffset);
-    const beforeText = before.toString();
-    const needLead = beforeText && !/[\s]$/.test(beforeText);
-
-    editor.focus();
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
-
-    const style =
-      color === GRADIENT ? GRADIENT_STYLE : `color:${cleanColor(color) || "var(--text)"}`;
-    const html =
-      (needLead ? "&nbsp;" : "") +
-      `<span data-wid="${escapeHtml(item.id)}" style="${style}"` +
-      `${color === GRADIENT ? ' data-gradient="1"' : ""}>` +
-      `${escapeHtml(item.word)}</span>&nbsp;`;
-
-    document.execCommand("styleWithCSS", false, true);
-    document.execCommand("insertHTML", false, html);
-    syncFromEditor();
-  }
-
-  // ===== Đồng bộ màu giữa thẻ chữ và chữ trong tệp =====
-  const WORD_BOUNDARY = /[\s.,;:!?…"'“”‘’()\[\]{}\/\\]/;
-
-  const lastTextNode = root => {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    let node;
-    let last = null;
-    while ((node = walker.nextNode())) if (node.nodeValue) last = node;
-    return last;
-  };
-
-  // Tìm thẻ chữ có màu mà phần cuối của `before` trùng khớp (ưu tiên thẻ dài nhất).
-  const findColoredWord = before => {
-    const hay = before.normalize("NFC").toLowerCase();
-    if (hay.length !== before.length) return null;
-
-    const candidates = savedWords
-      .filter(w => cleanWordColor(w.color))
-      .map(w => ({ word: w, key: w.word.normalize("NFC").toLowerCase().trim() }))
-      .filter(c => c.key)
-      .sort((a, b) => b.key.length - a.key.length);
-
-    for (const { word, key } of candidates) {
-      if (!hay.endsWith(key)) continue;
-      const start = hay.length - key.length;
-      if (start === 0 || WORD_BOUNDARY.test(hay[start - 1])) return { word, start };
-    }
-    return null;
-  };
-
-  // Bọc chữ kết thúc tại `end` trong node (nếu khớp thẻ chữ có màu) bằng span liên kết data-wid.
-  // Trả về { tail, shift } để đặt lại con trỏ, hoặc null nếu không làm gì.
-  const colorWordEndingAt = (node, end) => {
-    const text = node.nodeValue;
-
-    while (end > 0 && WORD_BOUNDARY.test(text[end - 1])) end--;
-    if (end <= 0) return null;
-
-    if (node.parentElement?.closest("[data-wid]")) return null;
-    if (nodeColor(node)) return null; // chữ đã được tô màu thủ công
-
-    const hit = findColoredWord(text.slice(0, end));
-    if (!hit) return null;
-
-    const tail = node.splitText(end);
-    wrapTextRange(node, hit.start, end, makeLinkedSpan(hit.word.id, hit.word.color));
-
-    return { tail, shift: end };
-  };
-
-  // Khi thẻ chữ vừa được tô màu: liên kết (và tô màu) mọi chữ trùng khớp chưa có màu trong tệp,
-  // giống cách tệp tự tô màu khi gõ. Trả về true nếu DOM có thay đổi.
-  const linkTextToWord = word => {
-    const color = cleanWordColor(word.color);
-    const key = word.word.normalize("NFC").toLowerCase().trim();
-    if (!color || !key) return false;
-
-    const nodes = [];
-    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
-    let node;
-    while ((node = walker.nextNode())) nodes.push(node);
-
-    let changed = false;
-
-    nodes.forEach(textNode => {
-      const parent = textNode.parentElement;
-      if (!parent || parent.closest("[data-wid]") || nodeColor(textNode)) return;
-
-      const text = textNode.nodeValue;
-      const hay = text.normalize("NFC").toLowerCase();
-      if (hay.length !== text.length) return;
-
-      const hits = [];
-      for (let from = 0; ;) {
-        const i = hay.indexOf(key, from);
-        if (i < 0) break;
-
-        const e = i + key.length;
-        const okStart = i === 0 || WORD_BOUNDARY.test(hay[i - 1]);
-        const okEnd = e === hay.length || WORD_BOUNDARY.test(hay[e]);
-
-        if (okStart && okEnd) {
-          hits.push(i);
-          from = e;
-        } else {
-          from = i + 1;
-        }
-      }
-
-      for (let k = hits.length - 1; k >= 0; k--) {
-        wrapTextRange(textNode, hits[k], hits[k] + key.length, makeLinkedSpan(word.id, color));
-        changed = true;
-      }
-    });
-
-    return changed;
-  };
-
-  const autoColorTyped = ({ paragraph }) => {
-    const sel = window.getSelection();
-    if (!sel || !sel.rangeCount || !sel.isCollapsed) return false;
-
-    if (paragraph) {
-      let prev = currentBlockEl()?.previousElementSibling;
-      if (prev && (prev.tagName === "UL" || prev.tagName === "OL")) prev = prev.lastElementChild;
-      if (!prev) return false;
-
-      const node = lastTextNode(prev);
-      return Boolean(node && colorWordEndingAt(node, node.nodeValue.length));
-    }
-
-    const node = sel.anchorNode;
-    if (!node || node.nodeType !== Node.TEXT_NODE || !editor.contains(node)) return false;
-
-    const offset = sel.anchorOffset;
-    const result = colorWordEndingAt(node, offset - 1); // bỏ ký tự ngăn cách vừa gõ
-    if (!result) return false;
-
-    // Đặt lại con trỏ ngay sau ký tự ngăn cách (nằm ngoài span màu).
-    const range = document.createRange();
-    range.setStart(result.tail, Math.max(0, offset - result.shift));
-    range.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(range);
-    return true;
+    persist();
   };
 
   editor.addEventListener("input", event => {
@@ -3279,14 +3053,15 @@ function init({ phonetics: phoneticsData }) {
       return;
     }
 
-    // Gõ xong một từ (dấu cách / dấu câu / Enter): tự tô màu nếu từ đó có thẻ chữ màu.
-    if (event.inputType === "insertText" && event.data && WORD_BOUNDARY.test(event.data)) {
-      autoColorTyped({ paragraph: false });
-    } else if (event.inputType === "insertParagraph") {
-      autoColorTyped({ paragraph: true });
-
+    if (event.inputType === "insertParagraph") {
       const block = currentBlockEl();
-      if (block?.dataset.kind === "cite" && block.previousElementSibling?.dataset.kind === "cite") {
+      const prev = block?.previousElementSibling;
+
+      if (block?.dataset.kind === "cite" && prev?.dataset.kind === "cite") {
+        delete block.dataset.kind;
+      }
+
+      if (block?.dataset.kind === "dropcap" && prev?.dataset.kind === "dropcap") {
         delete block.dataset.kind;
       }
     }
@@ -3303,8 +3078,6 @@ function init({ phonetics: phoneticsData }) {
     syncFromEditor();
   });
 
-  // Gõ tiếp ở mép chữ liên kết (data-wid): đặt con trỏ vào một text node nằm NGOÀI span,
-  // để chữ mới không thừa hưởng màu / liên kết của từ đứng trước (hoặc sau).
   const escapeLinkedEdge = () => {
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount || !sel.isCollapsed) return;
@@ -3313,19 +3086,33 @@ function init({ phonetics: phoneticsData }) {
     if (!base || !editor.contains(base)) return;
 
     const host = base.nodeType === Node.TEXT_NODE ? base.parentElement : base;
-    const span = host?.closest?.("[data-wid]");
-    if (!span || !editor.contains(span)) return;
-
+    const LINKED = "[data-wid],[data-nid]";
     const probe = document.createRange();
-    probe.selectNodeContents(span);
-    probe.setStart(base, sel.anchorOffset);
-    const atEnd = !probe.toString();
 
-    probe.selectNodeContents(span);
-    probe.setEnd(base, sel.anchorOffset);
-    const atStart = !probe.toString();
+    let span = null;
+    let atEnd = false;
+    let atStart = false;
 
-    if (!atEnd && !atStart) return; // đang sửa giữa từ: giữ nguyên liên kết
+    for (
+      let n = host?.closest?.(LINKED);
+      n && editor.contains(n);
+      n = n.parentElement?.closest(LINKED)
+    ) {
+      probe.selectNodeContents(n);
+      probe.setStart(base, sel.anchorOffset);
+      const end = !probe.toString();
+
+      probe.selectNodeContents(n);
+      probe.setEnd(base, sel.anchorOffset);
+      const start = !probe.toString();
+
+      if (!end && !start) break;
+      span = n;
+      atEnd = end;
+      atStart = start;
+    }
+
+    if (!span) return;
 
     const gap = document.createTextNode("\u200b");
     if (atEnd) span.after(gap);
@@ -3350,7 +3137,7 @@ function init({ phonetics: phoneticsData }) {
 
   editor.addEventListener("blur", () => {
     clearTimeout(persistTimer);
-    persist(slots);
+    persist();
   });
 
   editor.addEventListener("paste", event => {
@@ -3934,9 +3721,34 @@ function init({ phonetics: phoneticsData }) {
     updateToolbarState();
   }
 
-  // Khi màu của thẻ chữ thay đổi: vẽ lại tệp để chữ liên kết đổi màu theo.
-  function syncLinkedColors() {
-    if (editor.querySelector("[data-wid]")) normalizeEditor();
+  function syncLinkedWord(word, { color = false, format = false, transform = null }) {
+    const nodes = editor.querySelectorAll(`[data-wid="${CSS.escape(word.id)}"]`);
+    if (!nodes.length) return;
+
+    const paint = cleanWordColor(word.color);
+
+    nodes.forEach(node => {
+      if (color) {
+        clearGradientText(node);
+        node.style.color = "";
+        paintText(node, paint);
+      }
+
+      if (format) {
+        node.style.fontWeight = word.bold ? "700" : "400";
+        node.style.fontStyle = word.italic ? "italic" : "normal";
+        node.style.textDecoration = word.underline ? "underline" : "none";
+      }
+
+      if (transform) {
+        const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+        let text;
+        while ((text = walker.nextNode())) text.nodeValue = transform(text.nodeValue);
+      }
+    });
+
+    if (format) normalizeEditor();
+    else syncFromEditor();
   }
 
   const MARK_COLOR = "#010203";
@@ -3979,7 +3791,6 @@ function init({ phonetics: phoneticsData }) {
         parseCssColor(node.getAttribute("color") || "") === MARK_COLOR;
       if (!marked) return;
 
-      // Tô màu thủ công => gỡ liên kết màu với thẻ chữ.
       node.removeAttribute("data-wid");
       node.removeAttribute("color");
       clearGradientText(node);
@@ -4253,7 +4064,6 @@ function init({ phonetics: phoneticsData }) {
     updateToolbarState();
   };
 
-  // Các text node nằm trong vùng bôi đen, kèm đoạn [start, end) được chọn.
   const selectedTextSpans = range => {
     const spans = [];
     const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
@@ -4294,7 +4104,228 @@ function init({ phonetics: phoneticsData }) {
     updateToolbarState();
   };
 
-  const nodeColor = node => {
+  const noteIdOf = node => node.parentElement?.closest("[data-nid]")?.dataset.nid ?? null;
+  const noteSel = id => `[data-nid="${CSS.escape(id)}"]`;
+
+  const collectNotes = () => {
+    const groups = new Map();
+
+    editor.querySelectorAll("[data-nid]").forEach(node => {
+      const id = node.dataset.nid;
+      if (!groups.has(id)) groups.set(id, { id, note: node.dataset.note || "", nodes: [] });
+      groups.get(id).nodes.push(node);
+    });
+
+    return [...groups.values()].map((group, i) => ({
+      id: group.id,
+      note: group.note,
+      n: i + 1,
+      nodes: group.nodes,
+      text: group.nodes
+        .map(node => node.textContent)
+        .join("")
+        .replace(/\u200b/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+    }));
+  };
+
+  const setNoteText = (id, text) => {
+    editor.querySelectorAll(noteSel(id)).forEach(node => {
+      if (text) {
+        node.dataset.note = text;
+        node.title = text;
+      } else {
+        delete node.dataset.nid;
+        delete node.dataset.note;
+        delete node.dataset.n;
+        node.removeAttribute("title");
+      }
+    });
+
+    normalizeEditor();
+  };
+
+  const askNote = (title, value) =>
+    askName({ title, defaultValue: value, okText: "Lưu", maxLength: MAX_NOTE_LEN, clean: cleanNote });
+
+  const editNote = async id => {
+    const current = editor.querySelector(noteSel(id))?.dataset.note ?? "";
+    const saved = captureSel();
+
+    const text = await askNote("Sửa chú giải nghĩa (để trống để xóa chú giải)", current);
+    if (text === null) return;
+
+    if (saved) restoreSel(saved);
+    setNoteText(id, text);
+    showToast(text ? "Đã cập nhật chú giải" : "Đã xóa chú giải");
+  };
+
+  const addNote = async () => {
+    const sel = window.getSelection();
+
+    if (!selectionInEditor() || selectedImg || !sel.rangeCount) {
+      showToast("Hãy bôi đen chữ trong tệp để thêm chú giải nghĩa");
+      return;
+    }
+
+    if (sel.isCollapsed) {
+      const base = sel.anchorNode;
+      const host = base.nodeType === Node.TEXT_NODE ? base.parentElement : base;
+      const id = host?.closest?.("[data-nid]")?.dataset.nid;
+
+      if (id) editNote(id);
+      else showToast("Hãy bôi đen chữ cần chú giải, hoặc đặt con trỏ vào chữ đã có chú giải để sửa");
+      return;
+    }
+
+    const spans = selectedTextSpans(sel.getRangeAt(0));
+    const touched = spans.map(sp => noteIdOf(sp.node));
+    const ids = new Set(touched.filter(Boolean));
+
+    if (ids.size) {
+      const only = [...ids][0];
+      if (ids.size === 1 && touched.every(id => id === only)) editNote(only);
+      else showToast("Vùng chọn đã có chú giải. Hãy chọn chữ khác, hoặc đặt con trỏ vào chữ đó để sửa");
+      return;
+    }
+
+    const parts = spans.map(sp => ({ ...sp, s: sp.start, e: sp.end }));
+    const blank = ch => /[\s\u200b]/.test(ch);
+
+    for (const sp of parts) {
+      const text = sp.node.nodeValue;
+      while (sp.s < sp.e && blank(text[sp.s])) sp.s++;
+      if (sp.e > sp.s) break;
+    }
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const sp = parts[i];
+      const text = sp.node.nodeValue;
+      while (sp.e > sp.s && blank(text[sp.e - 1])) sp.e--;
+      if (sp.e > sp.s) break;
+    }
+
+    const targets = parts.filter(sp => sp.e > sp.s);
+    if (!targets.length) {
+      showToast("Vùng bôi đen không có chữ để chú giải");
+      return;
+    }
+
+    const label = targets.map(sp => sp.node.nodeValue.slice(sp.s, sp.e)).join(" ").slice(0, 40);
+    const saved = captureSel();
+
+    const text = await askNote(`Chú giải nghĩa cho “${label}”`, "");
+    if (!text) return;
+
+    restoreSel(saved);
+
+    const id = crypto.randomUUID();
+    targets.forEach(({ node, s, e }) => {
+      const span = document.createElement("span");
+      span.dataset.nid = id;
+      span.dataset.note = text;
+      span.title = text;
+      wrapTextRange(node, s, e, span);
+    });
+
+    normalizeEditor();
+    showToast("Đã thêm chú giải nghĩa");
+  };
+
+  const goToNote = id => {
+    const node = editor.querySelector(noteSel(id));
+    if (!node) return;
+
+    closeModal();
+    node.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
+    caretIn(node, false);
+
+    if (!reduceMotion) {
+      node.animate(
+        [{ background: "color-mix(in srgb, var(--hl) 40%, transparent)" }, { background: "transparent" }],
+        { duration: 900, easing: "ease-out" }
+      );
+    }
+  };
+
+  const renderNotesBody = body => {
+    const notes = collectNotes();
+
+    if (!notes.length) {
+      body.replaceChildren(
+        el(
+          "p",
+          "py-6 text-center text-sm text-muted",
+          "Chưa có chú giải nào. Bôi đen chữ rồi bấm nút chỉ số trên để thêm nghĩa."
+        )
+      );
+      return;
+    }
+
+    body.replaceChildren(
+      el(
+        "div",
+        "flex flex-col divide-y divide-[color-mix(in_srgb,var(--text)_12%,transparent)]",
+        "",
+        ...notes.map(item => {
+          const row = el("div", "flex items-start gap-1 px-1 py-2");
+
+          const open = el(
+            "button",
+            "flex min-w-0 flex-1 items-start gap-2 rounded-lg px-2 py-1 text-left " +
+            `hover:bg-[color-mix(in_srgb,var(--text)_8%,transparent)] ${FOCUS}`
+          );
+          open.type = "button";
+          open.title = "Đi tới chữ được chú giải";
+
+          const num = el("sup", "mt-0.5 shrink-0 text-xs font-bold", String(item.n));
+          num.style.color = SELECT_BLUE;
+
+          open.append(
+            num,
+            el(
+              "span",
+              "flex min-w-0 flex-1 flex-col",
+              "",
+              el("span", "break-words text-sm font-semibold", item.text || "(trống)"),
+              el("span", "break-words text-sm text-muted", item.note)
+            )
+          );
+          open.onclick = event => {
+            event.stopPropagation();
+            goToNote(item.id);
+          };
+
+          const edit = mkBtn(
+            `${iconBtn} text-muted`,
+            "Sửa chú giải",
+            '<i data-lucide="pencil" class="size-4"></i>'
+          );
+          edit.onclick = event => {
+            event.stopPropagation();
+            editNote(item.id);
+          };
+
+          const remove = mkBtn(
+            `${iconBtn} text-muted hover:text-red-500`,
+            "Xóa chú giải",
+            '<i data-lucide="trash-2" class="size-4"></i>'
+          );
+          remove.onclick = event => {
+            event.stopPropagation();
+            setNoteText(item.id, "");
+          };
+
+          row.append(open, edit, remove);
+          return row;
+        })
+      )
+    );
+  };
+
+  const openNotesModal = () => openModal("Chú giải nghĩa", renderNotesBody, "notes");
+
+  function nodeColor(node) {
     let n = node.parentElement;
 
     while (n && n !== editor) {
@@ -4316,6 +4347,34 @@ function init({ phonetics: phoneticsData }) {
     }
 
     return null;
+  }
+
+  const nodeFormat = node => {
+    let bold = null;
+    let italic = null;
+    let underline = null;
+
+    for (let n = node.parentElement; n && n !== editor; n = n.parentElement) {
+      const css = n.style;
+
+      if (bold === null) {
+        if (n.tagName === "B" || n.tagName === "STRONG") bold = true;
+        else if (css?.fontWeight) bold = css.fontWeight === "bold" || Number(css.fontWeight) >= 600;
+      }
+
+      if (italic === null) {
+        if (n.tagName === "I" || n.tagName === "EM") italic = true;
+        else if (css?.fontStyle) italic = css.fontStyle === "italic";
+      }
+
+      if (underline === null) {
+        const decoration = css?.textDecorationLine || css?.textDecoration;
+        if (n.tagName === "U") underline = true;
+        else if (decoration) underline = decoration.includes("underline");
+      }
+    }
+
+    return { bold: bold === true, italic: italic === true, underline: underline === true };
   };
 
   const BLOCK_SEL = "p,h1,h2,h3,h4,li,td,div";
@@ -4338,13 +4397,14 @@ function init({ phonetics: phoneticsData }) {
       lastBlock = block;
 
       const color = nodeColor(node);
+      const format = nodeFormat(node);
       const text = node.nodeValue.slice(start, end).replace(/\u00a0/g, " ").replace(/\u200b/g, "");
 
       for (const ch of text) {
         if (/\s/.test(ch)) {
           flushWord();
         } else {
-          if (!cur) cur = { word: "", color };
+          if (!cur) cur = { word: "", color, ...format };
           cur.word += ch;
         }
       }
@@ -4353,12 +4413,16 @@ function init({ phonetics: phoneticsData }) {
     flushWord();
 
     return words
-      .map(w => ({ word: w.word.slice(0, MAX_WORD_LEN), color: cleanWordColor(w.color) }))
+      .map(w => ({
+        word: w.word.slice(0, MAX_WORD_LEN),
+        color: cleanWordColor(w.color),
+        bold: w.bold,
+        italic: w.italic,
+        underline: w.underline
+      }))
       .slice(0, MAX_IMPORT_WORDS);
   };
 
-  // Liên kết (data-wid) chữ đang bôi đen với các thẻ chữ vừa tạo, để màu luôn đồng bộ.
-  // Quy tắc tách từ giống hệt selectionWords nên chỉ số từ khớp với `ids`.
   const linkSelectionToWords = (saved, ids, merged) => {
     restoreSel(saved);
 
@@ -4366,9 +4430,7 @@ function init({ phonetics: phoneticsData }) {
     if (!sel.rangeCount || sel.isCollapsed) return;
 
     if (merged) {
-      // Giữ nguyên cả cụm: mỗi text node được bọc liền một mạch (kể cả dấu cách ở giữa),
-      // chỉ cắt khoảng trắng thừa ở hai đầu vùng bôi đen.
-      const word = savedWords.find(w => w.id === ids[0]);
+      const word = docWords.find(w => w.id === ids[0]);
       const spans = selectedTextSpans(sel.getRangeAt(0)).map(sp => ({ ...sp, s: sp.start, e: sp.end }));
       const blank = ch => /[\s\u200b]/.test(ch);
 
@@ -4441,10 +4503,10 @@ function init({ phonetics: phoneticsData }) {
 
     plan.forEach(({ node, segs }) => {
       for (let k = segs.length - 1; k >= 0; k--) {
-        const id = merged ? ids[0] : ids[segs[k].idx];
+        const id = ids[segs[k].idx];
         if (!id) continue;
 
-        const word = savedWords.find(w => w.id === id);
+        const word = docWords.find(w => w.id === id);
         if (!word) continue;
 
         wrapTextRange(node, segs[k].s, segs[k].e, makeLinkedSpan(id, word.color));
@@ -4454,11 +4516,42 @@ function init({ phonetics: phoneticsData }) {
     normalizeEditor();
   };
 
+  const commitSplit = (saved, words, merged) => {
+    const items = merged
+      ? [{ ...words[0], word: words.map(w => w.word).join(" ").slice(0, MAX_WORD_LEN) }]
+      : words;
+
+    if (docWords.length + items.length > MAX_DOC_WORDS) {
+      showToast(`Mỗi tài liệu tối đa ${MAX_DOC_WORDS} từ`);
+      return;
+    }
+
+    const ids = items.map(item => {
+      const id = crypto.randomUUID();
+      docWords.push({
+        id,
+        word: item.word,
+        color: item.color,
+        bold: item.bold,
+        italic: item.italic,
+        underline: item.underline
+      });
+      return id;
+    });
+
+    closeModal();
+
+    linkSelectionToWords(saved, ids, merged);
+    commitWords();
+
+    showToast(`Đã thêm ${items.length} thẻ chữ vào danh sách từ`);
+  };
+
   const openSplitModal = () => {
     const sel = window.getSelection();
 
     if (!selectionInEditor() || selectedImg || !sel.rangeCount || sel.isCollapsed) {
-      showToast("Hãy bôi đen chữ trong tệp để tách thành thẻ chữ");
+      showToast("Hãy bôi đen chữ trong tệp để tạo thẻ chữ");
       return;
     }
 
@@ -4466,97 +4559,46 @@ function init({ phonetics: phoneticsData }) {
     const words = selectionWords(sel.getRangeAt(0));
 
     if (!saved || !words.length) {
-      showToast("Vùng bôi đen không có chữ để tách");
+      showToast("Vùng bôi đen không có chữ để tạo thẻ");
       return;
     }
 
-    const perWord = el("input", "size-4 accent-[#3b82f6]");
-    perWord.type = "checkbox";
-    perWord.checked = false; // mặc định: giữ nguyên cả cụm đã bôi đen thành một thẻ
+    if (words.length === 1) {
+      commitSplit(saved, words, true);
+      return;
+    }
 
-    // Tạo thẻ chữ mới và liên kết chữ trong tệp với các thẻ đó (màu đồng bộ hai chiều).
-    const commit = collectionId => {
-      const col = collectionId ? collections.find(c => c.id === collectionId) : null;
-      const merged = !perWord.checked;
-
-      const items = merged
-        ? [{
-          word: words.map(w => w.word).join(" ").slice(0, MAX_WORD_LEN),
-          color: words[0].color
-        }]
-        : words;
-
-      const ids = items.map(item => {
-        const id = crypto.randomUUID();
-        savedWords.push({ id, word: item.word, parts: null, color: item.color });
-        if (col) col.wordIds.push(id);
-        return id;
-      });
-
-      closeModal();
-
-      linkSelectionToWords(saved, ids, merged);
-
-      persist(slots);
-      renderAll();
-      showToast(
-        `Đã tách ${items.length} thẻ chữ` +
-        (col ? ` vào “${col.name}”` : " vào danh sách từ") +
-        " (chữ trong tệp được liên kết màu với thẻ)"
-      );
+    const mergeBtn = el("button", PRIMARY_BTN, "Giữ nguyên cụm (1 thẻ)");
+    mergeBtn.type = "button";
+    mergeBtn.onclick = event => {
+      event.stopPropagation();
+      commitSplit(saved, words, true);
     };
 
-    const destBtn = (icon, label, count, onClick, highlight = false) => {
-      const button = mkBtn(
-        `${toolBtnClass} w-full justify-start h-10` +
-        (highlight ? " bg-[color-mix(in_srgb,var(--text)_10%,transparent)]" : ""),
-        label,
-        `<i data-lucide="${icon}" class="size-4 shrink-0"></i>`
-      );
-      button.append(
-        el("span", "min-w-0 flex-1 truncate text-left", label),
-        el("span", "shrink-0 text-xs text-muted", count)
-      );
-      button.onclick = event => {
-        event.stopPropagation();
-        onClick();
-      };
-      return button;
+    const splitAllBtn = el("button", toolBtnClass, `Cắt nhỏ (${words.length} thẻ)`);
+    splitAllBtn.type = "button";
+    splitAllBtn.onclick = event => {
+      event.stopPropagation();
+      commitSplit(saved, words, false);
     };
 
     openModal(
-      `Tách ${words.length} từ thành thẻ chữ`,
+      `Tạo thẻ chữ từ ${words.length} từ`,
       body =>
         body.replaceChildren(
           el(
             "p",
             "mb-2 text-xs text-muted",
-            "Chữ đang bôi đen sẽ được giữ nguyên trong tệp, đồng thời tạo thành thẻ chữ và liên kết màu với thẻ. Chọn nơi đặt các thẻ:"
+            "Chữ đang bôi đen vẫn được giữ trong tệp, đồng thời tạo thẻ chữ trong danh sách từ của tài liệu này và liên kết màu với thẻ."
           ),
           el(
-            "div",
-            "flex flex-col gap-2",
-            "",
-            destBtn("list", "Danh sách từ", `${listedWords().length} từ`, () => commit(null)),
-            ...collections.map(col =>
-              destBtn(
-                col.id === markedCollectionId ? "pin" : "folder",
-                col.name,
-                `${col.wordIds.length} từ`,
-                () => commit(col.id),
-                col.id === markedCollectionId
-              )
-            )
+            "p",
+            "rounded-xl px-3 py-2 text-sm bg-[color-mix(in_srgb,var(--text)_6%,transparent)] break-words",
+            words.map(w => w.word).join(" ")
           )
         ),
       "split",
-      el(
-        "label",
-        "flex items-center gap-2 text-sm",
-        "",
-        perWord,
-        el("span", "", "Cắt nhỏ: mỗi từ một thẻ riêng (mặc định giữ nguyên cả cụm)")
-      )
+      el("div", "flex flex-wrap items-center justify-end gap-2", "", splitAllBtn, mergeBtn)
     );
   };
 
@@ -4586,6 +4628,8 @@ function init({ phonetics: phoneticsData }) {
     },
     { btn: upperBtn, run: () => changeCase("upper") },
     { btn: lowerBtn, run: () => changeCase("lower") },
+    { btn: noteBtn, run: addNote },
+    { btn: notesBtn, run: openNotesModal },
     { btn: splitBtn, run: openSplitModal },
     ...headingBtns.map((btn, i) => ({
       btn,
@@ -4602,6 +4646,8 @@ function init({ phonetics: phoneticsData }) {
     { btn: indentBtn, run: toggleIndent, active: () => currentBlockEl()?.dataset.indent === "1" },
     { btn: quoteBtn, run: applyQuote, active: () => currentBlockEl()?.dataset.kind === "quote" },
     { btn: citeBtn, run: addCaption, active: () => currentBlockEl()?.dataset.kind === "cite" },
+    { btn: poemBtn, run: () => toggleKind("poem"), active: () => currentBlockEl()?.dataset.kind === "poem" },
+    { btn: dropcapBtn, run: () => toggleKind("dropcap"), active: () => currentBlockEl()?.dataset.kind === "dropcap" },
     { btn: imageBtn, run: openImageModal },
     { btn: tableBtn, run: openTableModal },
     { btn: moveUpBtn, run: () => moveBlocks(-1) },
@@ -4730,6 +4776,7 @@ function init({ phonetics: phoneticsData }) {
     if (name === null) return;
 
     const blocks = cloneBlocks(sentenceBlocks);
+    const words = cleanWords(docWords);
     const existing = savedSentences.find(s => s.name.toLowerCase() === name.toLowerCase());
 
     if (existing) {
@@ -4742,6 +4789,7 @@ function init({ phonetics: phoneticsData }) {
 
       existing.name = name;
       existing.blocks = blocks;
+      existing.words = words;
       currentSavedId = existing.id;
       showToast(`Đã cập nhật “${name}”`);
     } else {
@@ -4750,13 +4798,13 @@ function init({ phonetics: phoneticsData }) {
         return;
       }
 
-      const entry = { id: crypto.randomUUID(), name, blocks };
+      const entry = { id: crypto.randomUUID(), name, blocks, words };
       savedSentences.unshift(entry);
       currentSavedId = entry.id;
       showToast(`Đã lưu “${name}”`);
     }
 
-    persist(slots);
+    persist();
     renderSavedSentences();
   };
 
@@ -4777,7 +4825,7 @@ function init({ phonetics: phoneticsData }) {
 
   clearSentenceBtn.onclick = event => {
     event.stopPropagation();
-    setSentence([]);
+    setDocument([], [], null);
     renderSavedSentences();
   };
 
@@ -4798,14 +4846,16 @@ function init({ phonetics: phoneticsData }) {
       {
         app: "mixer",
         type: "sentence-document",
-        version: 6,
+        version: 8,
         exportedAt: new Date().toISOString(),
-        document: { text: sentenceString(), blocks: sentenceBlocks },
+        document: { text: sentenceString(), blocks: sentenceBlocks, words: docWords },
         colorLegend,
+        docStyle,
         savedSentences: savedSentences.map(entry => ({
           name: entry.name,
           text: blocksToText(entry.blocks),
-          blocks: entry.blocks
+          blocks: entry.blocks,
+          words: entry.words
         }))
       },
       `${name}.json`
@@ -4815,25 +4865,34 @@ function init({ phonetics: phoneticsData }) {
   };
 
   const sanitizeSentenceImport = data => {
-    const toBlocks = value => {
-      if (typeof value === "string") return textToBlocks(value);
+    const toDoc = value => {
+      const words =
+        value && typeof value === "object" && !Array.isArray(value)
+          ? cleanWords(value.words)
+          : [];
 
-      if (Array.isArray(value)) {
-        return value.some(item => item && (Array.isArray(item.runs) || item.type))
-          ? cleanBlocks(value)
-          : runsToBlocks(cleanRuns(value));
-      }
+      const blocks = withWords(words, () => {
+        if (typeof value === "string") return textToBlocks(value);
 
-      if (value && Array.isArray(value.blocks)) return cleanBlocks(value.blocks);
-      if (value && Array.isArray(value.runs)) return runsToBlocks(cleanRuns(value.runs));
-      if (value && typeof value.text === "string") return textToBlocks(value.text);
-      return [];
+        if (Array.isArray(value)) {
+          return value.some(item => item && (Array.isArray(item.runs) || item.type))
+            ? cleanBlocks(value)
+            : runsToBlocks(cleanRuns(value));
+        }
+
+        if (value && Array.isArray(value.blocks)) return cleanBlocks(value.blocks);
+        if (value && Array.isArray(value.runs)) return runsToBlocks(cleanRuns(value.runs));
+        if (value && typeof value.text === "string") return textToBlocks(value.text);
+        return [];
+      });
+
+      return { blocks, words };
     };
 
-    const result = { document: [], saved: [], legend: {} };
+    const result = { document: { blocks: [], words: [] }, saved: [], legend: {}, style: null };
 
     if (typeof data === "string" || Array.isArray(data)) {
-      result.document = toBlocks(data);
+      result.document = toDoc(data);
       return result;
     }
 
@@ -4844,8 +4903,12 @@ function init({ phonetics: phoneticsData }) {
       (data.blocks !== undefined || data.runs !== undefined || data.text !== undefined
         ? data
         : null);
-    result.document = toBlocks(source);
+    result.document = toDoc(source);
     result.legend = cleanLegend(data.colorLegend);
+
+    if (data.docStyle && typeof data.docStyle === "object" && !Array.isArray(data.docStyle)) {
+      result.style = cleanDocStyle(data.docStyle);
+    }
 
     const list = Array.isArray(data.savedSentences)
       ? data.savedSentences
@@ -4854,13 +4917,17 @@ function init({ phonetics: phoneticsData }) {
         : [];
 
     result.saved = list
-      .map(item => ({
-        name:
-          item && typeof item === "object" && typeof item.name === "string"
-            ? cleanName(item.name, "")
-            : "",
-        blocks: toBlocks(item)
-      }))
+      .map(item => {
+        const doc = toDoc(item);
+        return {
+          name:
+            item && typeof item === "object" && typeof item.name === "string"
+              ? cleanName(item.name, "")
+              : "",
+          blocks: doc.blocks,
+          words: doc.words
+        };
+      })
       .filter(entry => entry.blocks.length);
 
     return result;
@@ -4876,20 +4943,27 @@ function init({ phonetics: phoneticsData }) {
       const parsed = sanitizeSentenceImport(JSON.parse(await file.text()));
 
       if (
-        !parsed.document.length &&
+        !parsed.document.blocks.length &&
         !parsed.saved.length &&
-        !Object.keys(parsed.legend).length
+        !Object.keys(parsed.legend).length &&
+        !parsed.style
       ) {
         showToast("Tệp không có nội dung hợp lệ");
         return;
       }
 
-      if (parsed.document.length) {
+      if (parsed.document.blocks.length) {
         if (!confirmDiscard()) return;
-        setSentence(parsed.document);
+        setDocument(parsed.document.blocks, parsed.document.words);
       }
 
       Object.assign(colorLegend, parsed.legend);
+
+      if (parsed.style) {
+        docStyle = parsed.style;
+        applyDocStyle();
+        refreshStyleInputs();
+      }
 
       let added = 0;
       for (const entry of parsed.saved) {
@@ -4897,17 +4971,18 @@ function init({ phonetics: phoneticsData }) {
         savedSentences.push({
           id: crypto.randomUUID(),
           name: uniqueName(entry.name || defaultSentenceName(entry.blocks)),
-          blocks: entry.blocks
+          blocks: entry.blocks,
+          words: entry.words
         });
         added++;
       }
 
-      persist(slots);
+      persist();
       renderSavedSentences();
       refreshSentenceUi();
 
       showToast(
-        (parsed.document.length ? "Đã nhập tài liệu" : "Đã nhập") +
+        (parsed.document.blocks.length ? "Đã nhập tài liệu" : "Đã nhập") +
         (added ? `, ${added} tệp đã lưu` : "")
       );
     } catch (error) {
@@ -4939,7 +5014,7 @@ function init({ phonetics: phoneticsData }) {
 
     if (!reopeningSame && !confirmDiscard()) return;
 
-    setSentence(cloneBlocks(entry.blocks), entry.id);
+    setDocument(cloneBlocks(entry.blocks), entry.words, entry.id);
     renderSavedSentences();
 
     editor.focus({ preventScroll: true });
@@ -4966,7 +5041,7 @@ function init({ phonetics: phoneticsData }) {
     }
 
     entry.name = name;
-    persist(slots);
+    persist();
     renderSavedSentences();
   };
 
@@ -4987,7 +5062,10 @@ function init({ phonetics: phoneticsData }) {
     open.title = `Mở “${entry.name}” trong khu vực soạn tệp`;
     if (isCurrent) open.setAttribute("aria-current", "true");
     open.innerHTML = '<i data-lucide="file-text" class="size-4 shrink-0 text-muted"></i>';
-    open.append(el("span", "min-w-0 truncate", entry.name));
+    open.append(
+      el("span", "min-w-0 flex-1 truncate", entry.name),
+      el("span", "shrink-0 text-xs text-muted", `${entry.words.length} từ`)
+    );
     open.onclick = event => {
       event.stopPropagation();
       openSaved(entry);
@@ -5015,7 +5093,7 @@ function init({ phonetics: phoneticsData }) {
         () => {
           savedSentences = savedSentences.filter(s => s.id !== entry.id);
           if (currentSavedId === entry.id) currentSavedId = null;
-          persist(slots);
+          persist();
           renderSavedSentences();
         },
         "hover:text-red-500"
@@ -5065,7 +5143,7 @@ function init({ phonetics: phoneticsData }) {
     const order = [
       ...new Set([
         ...used,
-        ...savedWords.map(word => word.color).filter(Boolean),
+        ...docWords.map(word => word.color).filter(Boolean),
         ...Object.keys(colorLegend),
         ...PALETTE,
         GRADIENT
@@ -5137,7 +5215,7 @@ function init({ phonetics: phoneticsData }) {
       }))
     ];
 
-    setSentence([...sentenceBlocks, ...added], currentSavedId);
+    setDocument([...sentenceBlocks, ...added], docWords, currentSavedId);
     closeModal();
     showToast("Đã chèn chú giải vào cuối tệp");
   };
@@ -5160,7 +5238,7 @@ function init({ phonetics: phoneticsData }) {
       el(
         "span",
         "min-w-0 flex-1 text-xs text-muted",
-        "Chú giải hiện dưới khung soạn cho các màu đang dùng trong tệp."
+        "Bấm nút “Bật/tắt chú giải màu” trên thanh công cụ để xem chú giải ở bên trái (không hiển thị trong tài liệu)."
       ),
       insertBtn
     );
@@ -5172,40 +5250,6 @@ function init({ phonetics: phoneticsData }) {
     event.stopPropagation();
     openLegendModal();
   };
-
-  const collectionsEl = el("section", "mt-8 flex flex-col gap-3");
-  const collectionsTitle = el(
-    "p",
-    "mr-auto text-xs font-semibold uppercase tracking-wide text-muted"
-  );
-  const collectionList = el("div", "grid gap-3 sm:grid-cols-2");
-
-  const nameInput = el("input", `${FIELD} w-40`);
-  nameInput.type = "text";
-  nameInput.maxLength = 40;
-  nameInput.placeholder = "Tên bộ sưu tập";
-  nameInput.setAttribute("aria-label", "Tên bộ sưu tập mới");
-
-  const createBtn = mkBtn(
-    toolBtnClass,
-    "Tạo bộ sưu tập",
-    '<i data-lucide="folder-plus" class="size-4"></i><span class="text-sm font-semibold">Tạo</span>'
-  );
-  const importBtn = mkBtn(
-    toolBtnClass,
-    "Nhập bộ sưu tập từ tệp JSON",
-    '<i data-lucide="upload" class="size-4"></i><span class="text-sm font-semibold">Nhập</span>'
-  );
-  const exportAllBtn = mkBtn(
-    toolBtnClass,
-    "Xuất tất cả bộ sưu tập ra tệp JSON",
-    '<i data-lucide="download" class="size-4"></i><span class="text-sm font-semibold">Xuất tất cả</span>'
-  );
-
-  const fileInput = el("input", "hidden");
-  fileInput.type = "file";
-  fileInput.accept = ".json,application/json";
-  fileInput.setAttribute("aria-hidden", "true");
 
   const paletteRow = el("div", "flex flex-wrap items-center gap-2");
   let customColor = "#06b6d4";
@@ -5299,761 +5343,159 @@ function init({ phonetics: phoneticsData }) {
     ),
     customSwatch,
     palettePipette.wrap,
-    buildSwatch(() => null, "Xóa màu (kéo vào thẻ chữ)"),
-    el(
-      "span",
-      "ml-1 text-xs text-muted",
-      "Kéo màu vào bất kỳ thẻ chữ nào · hoặc bôi đen chữ / chọn ảnh trong tệp rồi bấm màu"
-    )
+    buildSwatch(() => null, "Xóa màu (kéo vào thẻ chữ)")
   );
 
-  collectionsEl.append(
+  const setWordColor = (wordId, color) => {
+    const word = docWords.find(w => w.id === wordId);
+    if (!word) return;
+
+    word.color = color || null;
+
+    commitWords();
+    syncLinkedWord(word, { color: true });
+    showToast(color ? `Đã đổi màu “${word.word}”` : `Đã xóa màu “${word.word}”`);
+  };
+
+  const WORD_TOOL_LABELS = {
+    bold: "in đậm",
+    italic: "in nghiêng",
+    underline: "gạch chân",
+    upper: "VIẾT HOA",
+    lower: "viết thường",
+    plain: "xóa định dạng"
+  };
+
+  const applyWordTool = (wordId, tool) => {
+    const word = docWords.find(w => w.id === wordId);
+    if (!word) return;
+
+    let sync;
+
+    if (tool === "upper" || tool === "lower") {
+      const transform = text =>
+        tool === "upper" ? text.toLocaleUpperCase("vi") : text.toLocaleLowerCase("vi");
+      word.word = transform(word.word);
+      sync = { transform };
+    } else if (tool === "plain") {
+      word.bold = false;
+      word.italic = false;
+      word.underline = false;
+      word.color = null;
+      sync = { color: true, format: true };
+    } else {
+      word[tool] = !word[tool];
+      sync = { format: true };
+    }
+
+    commitWords();
+    syncLinkedWord(word, sync);
+    showToast(`Đã áp dụng ${WORD_TOOL_LABELS[tool]} cho “${word.word}”`);
+  };
+
+  const attachToolDrag = (btn, tool) => {
+    btn.style.touchAction = "none";
+
+    btn.addEventListener(
+      "click",
+      event => {
+        if (!suppressClick) return;
+        event.stopImmediatePropagation();
+        event.preventDefault();
+      },
+      true
+    );
+
+    btn.addEventListener("pointerdown", event => {
+      startDrag(btn, event, {
+        lift: 1.2,
+        targets: "[data-word]",
+        makeGhost: () => {
+          const ghost = btn.cloneNode(true);
+          ghost.removeAttribute("aria-pressed");
+          ghost.classList.add("bg-bg");
+          return ghost;
+        },
+        onPick: () => { suppressClick = true; },
+        onEnd: releaseClick,
+        onDrop: node => applyWordTool(node.dataset.word, tool)
+      });
+    });
+  };
+
+  const toolsRow = el("div", "flex flex-wrap items-center gap-2");
+
+  [
+    ["bold", "bold", "Đậm", "Kéo vào thẻ chữ để in đậm"],
+    ["italic", "italic", "Nghiêng", "Kéo vào thẻ chữ để in nghiêng"],
+    ["underline", "underline", "Gạch chân", "Kéo vào thẻ chữ để gạch chân"],
+    ["case-upper", "upper", "HOA", "Kéo vào thẻ chữ để VIẾT HOA"],
+    ["case-lower", "lower", "thường", "Kéo vào thẻ chữ để viết thường"],
+    ["remove-formatting", "plain", "Xóa định dạng", "Kéo vào thẻ chữ để xóa định dạng và màu"]
+  ].forEach(([icon, tool, label, title]) => {
+    const chip = mkBtn(
+      `${toolBtnClass} cursor-grab`,
+      title,
+      `<i data-lucide="${icon}" class="size-4"></i><span class="text-sm font-semibold">${label}</span>`
+    );
+    chip.addEventListener("mousedown", event => event.preventDefault());
+    chip.onclick = event => {
+      event.stopPropagation();
+      showToast("Kéo nút này vào một thẻ chữ để áp dụng");
+    };
+    attachToolDrag(chip, tool);
+    toolsRow.append(chip);
+  });
+
+  toolsRow.prepend(
+    el("span", "mr-1 text-xs font-semibold uppercase tracking-wide text-muted", "Định dạng")
+  );
+
+  const dragBar = el(
+    "div",
+    "sticky top-0 z-10 flex flex-col gap-3 bg-bg pb-3 " +
+    "border-b border-[color-mix(in_srgb,var(--text)_12%,transparent)]",
+    "",
     el(
       "div",
       "flex flex-wrap items-center gap-2",
       "",
-      collectionsTitle,
-      nameInput,
-      createBtn,
-      importBtn,
-      exportAllBtn,
-      fileInput
+      wordsCount,
+      clearWordsBtn,
+      el(
+        "span",
+        "ml-auto min-w-0 text-xs text-muted",
+        "Kéo màu hoặc nút định dạng vào thẻ chữ bên dưới."
+      )
     ),
     paletteRow,
-    collectionList
-  );
-  $("savedWords").after(collectionsEl);
-  $("savedWords").closest("section").after(sentenceEl);
-
-  const wordsAside = el(
-    "aside",
-    "hidden lg:flex flex-col gap-2 fixed left-4 top-4 z-40 w-60 " +
-    "max-h-[calc(100vh-2rem)] overflow-y-auto overflow-x-hidden p-3 rounded-2xl " +
-    "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden " +
-    `bg-bg text-text border-2 border-dashed ${DIVIDER}`
+    toolsRow
   );
 
-  wordsAside.dataset.wordlist = "1";
-  wordsAside.addEventListener("click", event => event.stopPropagation());
-  setShown(wordsAside, false);
-  document.body.append(wordsAside);
+  const wordsPanel = el("div", "flex flex-col", "", dragBar, wordsList);
 
-  const asideWatch = { words: true, collections: false, workspace: false };
-
-  const updateWordsAside = () => {
-    const show =
-      !asideWatch.words &&
-      asideWatch.collections &&
-      !asideWatch.workspace &&
-      listedWords().length > 0;
-    setShown(wordsAside, show);
-  };
-
-  function renderWordsAside() {
-    const words = listedWords();
-
-    const body = el("div", "flex flex-wrap gap-2");
-    body.append(...words.map(item => buildWordCard(item, null, true)));
-
-    const clearAside = mkBtn(
-      `${iconBtn} text-muted hover:text-red-500`,
-      "Xóa nhanh tất cả từ trong danh sách từ",
-      '<i data-lucide="trash-2" class="size-4"></i>'
-    );
-    clearAside.onclick = event => {
-      event.stopPropagation();
-      clearListedWords();
-    };
-
-    wordsAside.replaceChildren(
-      el(
-        "div",
-        "flex items-center gap-1",
-        "",
-        el("span", "min-w-0 flex-1 truncate text-sm font-semibold", "Danh sách từ"),
-        el("span", "shrink-0 text-xs text-muted", `${words.length} từ`),
-        clearAside
-      ),
-      body
+  const openClipboard = () =>
+    openModal(
+      "Bộ nhớ tạm · màu và danh sách từ",
+      body => body.replaceChildren(wordsPanel),
+      "clipboard",
+      null,
+      true
     );
 
-    updateWordsAside();
+  bind(clipboardBtn, openClipboard);
 
-    if (window.lucide) lucide.createIcons();
-  }
+  const legacyWordsSection = $("savedWords").closest("section");
+  legacyWordsSection.after(sentenceEl);
+  legacyWordsSection.style.display = "none";
 
-  if ("IntersectionObserver" in window) {
-    [
-      ["words", $("savedWords")],
-      ["collections", collectionsEl],
-      ["workspace", workspace]
-    ].forEach(([key, node]) => {
-      new IntersectionObserver(entries => {
-        asideWatch[key] = entries[entries.length - 1].isIntersecting;
-        updateWordsAside();
-      }).observe(node);
-    });
-  }
-
-  const createCollection = () => {
-    const name = nameInput.value.trim();
-
-    if (!name) {
-      nameInput.focus();
-      return;
-    }
-
-    if (collections.length >= MAX_COLLECTIONS) {
-      showToast(`Tối đa ${MAX_COLLECTIONS} bộ sưu tập`);
-      return;
-    }
-
-    collections.push({ id: crypto.randomUUID(), name, wordIds: [] });
-    nameInput.value = "";
-
-    persist(slots);
-    renderCollections();
-  };
-
-  createBtn.onclick = createCollection;
-
-  nameInput.addEventListener("keydown", event => {
-    if (event.isComposing) return;
-
-    if (event.key === "Enter") {
-      event.preventDefault();
-      createCollection();
-    }
-  });
-
-  const addToCollection = (collectionId, wordId) => {
-    const col = collections.find(c => c.id === collectionId);
-    if (!col) return;
-
-    const exists = col.wordIds.includes(wordId);
-
-    collections.forEach(other => {
-      if (other.id !== collectionId) {
-        other.wordIds = other.wordIds.filter(id => id !== wordId);
-      }
-    });
-
-    if (!exists) col.wordIds.push(wordId);
-
-    persist(slots);
-    renderAll();
-    showToast(exists ? `Từ đã có trong “${col.name}”` : `Đã chuyển vào “${col.name}”`);
-  };
-
-  const removeFromCollection = (collectionId, wordId) => {
-    const col = collections.find(c => c.id === collectionId);
-    if (!col) return;
-
-    col.wordIds = col.wordIds.filter(id => id !== wordId);
-    persist(slots);
-    renderAll();
-  };
-
-  // Đổi màu thẻ chữ => chữ liên kết trong tệp tự đổi theo; chữ trùng khớp chưa có màu cũng được liên kết.
-  const setWordColor = (wordId, color) => {
-    const word = savedWords.find(w => w.id === wordId);
-    if (!word) return;
-
-    word.color = color || null;
-    if (word.color) linkTextToWord(word);
-
-    persist(slots);
-    renderAll();
-    syncLinkedColors();
-    showToast(color ? `Đã đổi màu “${word.word}”` : `Đã xóa màu “${word.word}”`);
-  };
-
-  const serializeCollection = col => ({
-    name: col.name,
-    words: col.wordIds
-      .map(id => savedWords.find(word => word.id === id))
-      .filter(Boolean)
-      .map(word => ({ word: word.word, parts: partsOf(word), color: word.color || null }))
-  });
-
-  const buildExport = list => ({
-    app: "mixer",
-    type: "collections",
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    collections: list.map(serializeCollection)
-  });
-
-  const exportCollections = (list, filename) => {
-    downloadJson(buildExport(list), filename);
-    showToast(`Đã xuất ${list.length} bộ sưu tập`);
-  };
-
-  exportAllBtn.onclick = event => {
-    event.stopPropagation();
-
-    if (!collections.length) {
-      showToast("Chưa có bộ sưu tập để xuất");
-      return;
-    }
-
-    exportCollections(collections, "mixer-bo-suu-tap.json");
-  };
-
-  const sanitizeImport = data => {
-    let list = null;
-
-    if (Array.isArray(data)) list = data;
-    else if (Array.isArray(data?.collections)) list = data.collections;
-    else if (data && typeof data.name === "string") list = [data];
-
-    if (!list) return null;
-
-    return list
-      .filter(c => c && typeof c.name === "string" && c.name.trim())
-      .map(c => ({
-        name: c.name.trim().slice(0, 40),
-        words: (Array.isArray(c.words) ? c.words : [])
-          .map(w => (typeof w === "string" ? { word: w } : w))
-          .filter(w => w && typeof w.word === "string" && w.word.trim())
-          .slice(0, MAX_IMPORT_WORDS)
-          .map(w => {
-            const parts = Array.isArray(w.parts)
-              ? w.parts.filter(p => typeof p === "string").slice(0, MAX_ITEMS)
-              : [];
-
-            return {
-              word: w.word.trim().slice(0, MAX_WORD_LEN),
-              parts: parts.length ? parts : null,
-              color: cleanWordColor(w.color)
-            };
-          })
-      }));
-  };
-
-  const importCollections = async file => {
-    try {
-      if (file.size > MAX_IMPORT_SIZE) {
-        showToast("Tệp quá lớn (tối đa 2 MB)");
-        return;
-      }
-
-      const list = sanitizeImport(JSON.parse(await file.text()));
-
-      if (!list || !list.length) {
-        showToast("Tệp không đúng định dạng bộ sưu tập");
-        return;
-      }
-
-      let addedCollections = 0;
-      let addedWords = 0;
-      let skipped = 0;
-
-      for (const imported of list) {
-        if (collections.length >= MAX_COLLECTIONS) {
-          skipped++;
-          continue;
-        }
-
-        const col = { id: crypto.randomUUID(), name: imported.name, wordIds: [] };
-
-        imported.words.forEach(w => {
-          const id = crypto.randomUUID();
-          savedWords.push({ id, word: w.word, parts: w.parts, color: w.color });
-          col.wordIds.push(id);
-          addedWords++;
-        });
-
-        collections.push(col);
-        addedCollections++;
-      }
-
-      persist(slots);
-      renderAll();
-
-      if (!addedCollections) {
-        showToast(`Tối đa ${MAX_COLLECTIONS} bộ sưu tập`);
-      } else {
-        showToast(
-          `Đã nhập ${addedCollections} bộ, ${addedWords} từ` +
-          (skipped ? ` (bỏ qua ${skipped} bộ do vượt giới hạn)` : "")
-        );
-      }
-    } catch (error) {
-      console.warn("Không thể nhập tệp JSON:", error);
-      showToast("Không thể đọc tệp JSON");
-    }
-  };
-
-  importBtn.onclick = event => {
-    event.stopPropagation();
-    fileInput.click();
-  };
-
-  fileInput.addEventListener("change", () => {
-    const file = fileInput.files?.[0];
-    fileInput.value = "";
-    if (file) importCollections(file);
-  });
-
-  const startRename = (col, nameEl) => {
-    const input = el(
-      "input",
-      "min-w-0 flex-1 h-8 px-2 rounded-lg text-sm font-semibold bg-bg text-text " +
-      `${BORDER} ${FOCUS}`
-    );
-    input.type = "text";
-    input.maxLength = 40;
-    input.value = col.name;
-    input.setAttribute("aria-label", "Đổi tên bộ sưu tập");
-
-    let finished = false;
-
-    const commit = save => {
-      if (finished) return;
-      finished = true;
-
-      const name = input.value.trim();
-      if (save && name) {
-        col.name = name;
-        persist(slots);
-      }
-      renderCollections();
-    };
-
-    input.addEventListener("keydown", event => {
-      if (event.isComposing) return;
-
-      if (event.key === "Enter") {
-        event.preventDefault();
-        commit(true);
-      } else if (event.key === "Escape") {
-        event.stopPropagation();
-        commit(false);
-      }
-    });
-    input.addEventListener("blur", () => commit(true));
-
-    nameEl.replaceWith(input);
-    input.focus();
-    input.select();
-  };
-
-  const buildCollection = col => {
-    const words = col.wordIds
-      .map(id => savedWords.find(word => word.id === id))
-      .filter(Boolean);
-
-    const marked = col.id === markedCollectionId;
-
-    const panel = el(
-      "div",
-      "flex flex-col gap-3 p-3 rounded-2xl border-2 border-dashed transition " +
-      (marked ? "border-hl" : DIVIDER)
-    );
-    panel.dataset.collection = col.id;
-
-    const nameEl = el("span", "min-w-0 flex-1 truncate font-semibold", col.name);
-    nameEl.title = "Nhấp đúp để đổi tên";
-    nameEl.addEventListener("dblclick", () => startRename(col, nameEl));
-
-    const pinLabel = marked
-      ? "Bỏ đánh dấu bộ sưu tập"
-      : "Đánh dấu: hiện bên trái khung soạn tệp khi cuộn xuống";
-    const pin = mkBtn(
-      `${iconBtn} ${marked ? "text-con" : "text-muted"}`,
-      pinLabel,
-      `<i data-lucide="${marked ? "pin-off" : "pin"}" class="size-4"></i>`
-    );
-    pin.setAttribute("aria-pressed", String(marked));
-    pin.onclick = event => {
-      event.stopPropagation();
-      markedCollectionId = marked ? null : col.id;
-      persist(slots);
-      renderCollections();
-      showToast(marked ? "Đã bỏ đánh dấu" : `Đã đánh dấu “${col.name}”`);
-    };
-
-    const rename = mkBtn(
-      `${iconBtn} text-muted`,
-      "Đổi tên",
-      '<i data-lucide="pencil" class="size-4"></i>'
-    );
-    rename.setAttribute("aria-label", `Đổi tên bộ sưu tập ${col.name}`);
-    rename.onclick = event => {
-      event.stopPropagation();
-      startRename(col, nameEl);
-    };
-
-    const exportBtn = mkBtn(
-      `${iconBtn} text-muted`,
-      "Xuất bộ sưu tập ra tệp JSON",
-      '<i data-lucide="download" class="size-4"></i>'
-    );
-    exportBtn.setAttribute("aria-label", `Xuất bộ sưu tập ${col.name} ra JSON`);
-    exportBtn.onclick = event => {
-      event.stopPropagation();
-      exportCollections([col], `mixer-${slugify(col.name)}.json`);
-    };
-
-    const del = mkBtn(
-      `${iconBtn} text-muted hover:text-red-500`,
-      "Xóa bộ sưu tập (các từ quay về danh sách từ)",
-      '<i data-lucide="trash-2" class="size-4"></i>'
-    );
-    del.setAttribute("aria-label", `Xóa bộ sưu tập ${col.name}`);
-    del.onclick = event => {
-      event.stopPropagation();
-      if (markedCollectionId === col.id) markedCollectionId = null;
-      collections = collections.filter(c => c.id !== col.id);
-      persist(slots);
-      renderAll();
-    };
-
-    const head = el(
-      "div",
-      "flex items-center gap-1",
-      "",
-      nameEl,
-      el("span", "shrink-0 mr-1 text-xs text-muted", `${words.length} từ`),
-      pin,
-      rename,
-      exportBtn,
-      del
-    );
-
-    const body = el("div", "flex flex-wrap items-start gap-2 min-h-12");
-
-    if (words.length) {
-      body.append(...words.map(word => buildWordCard(word, col.id)));
-    } else {
-      body.append(
-        el("p", "w-full py-3 text-center text-sm text-muted", "Kéo thẻ từ vào đây")
-      );
-    }
-
-    panel.append(head, body);
-    return panel;
-  };
-
-  let markedOriginVisible = true;
-  let markedObserver = null;
-
-  function renderMarked() {
-    markedObserver?.disconnect();
-    markedObserver = null;
-
-    const col = collections.find(c => c.id === markedCollectionId);
-
-    if (!col) {
-      setShown(markedAside, false);
-      markedAside.replaceChildren();
-      return;
-    }
-
-    const words = col.wordIds
-      .map(id => savedWords.find(word => word.id === id))
-      .filter(Boolean);
-
-    const unpin = mkBtn(
-      `${iconBtn} text-muted`,
-      "Bỏ đánh dấu",
-      '<i data-lucide="pin-off" class="size-4"></i>'
-    );
-    unpin.setAttribute("aria-label", "Bỏ đánh dấu bộ sưu tập");
-    unpin.onclick = event => {
-      event.stopPropagation();
-      markedCollectionId = null;
-      persist(slots);
-      renderCollections();
-    };
-
-    const body = el("div", "flex flex-wrap gap-2");
-    if (words.length) {
-      body.append(...words.map(word => buildWordCard(word, col.id)));
-    } else {
-      body.append(el("p", "w-full py-2 text-center text-sm text-muted", "Bộ sưu tập chưa có từ nào."));
-    }
-
-    markedAside.replaceChildren(
-      el(
-        "div",
-        "flex items-center gap-1",
-        "",
-        el("span", "min-w-0 flex-1 truncate text-sm font-semibold", col.name),
-        unpin
-      ),
-      body
-    );
-
-    setShown(markedAside, !markedOriginVisible);
-
-    const origin = [...collectionList.children].find(n => n.dataset?.collection === col.id);
-
-    if (origin && "IntersectionObserver" in window) {
-      markedObserver = new IntersectionObserver(entries => {
-        markedOriginVisible = entries[entries.length - 1].isIntersecting;
-        setShown(markedAside, !markedOriginVisible);
-      });
-      markedObserver.observe(origin);
-    } else {
-      setShown(markedAside, true);
-    }
-  }
-
-  function renderCollections() {
-    collectionsTitle.textContent = `Bộ sưu tập · ${collections.length}`;
-    exportAllBtn.disabled = !collections.length;
-
-    if (!collections.length) {
-      collectionList.replaceChildren(
-        el(
-          "p",
-          "sm:col-span-2 py-4 text-center text-sm text-muted",
-          "Tạo hoặc nhập bộ sưu tập, rồi kéo thẻ từ vào đó để sắp xếp."
-        )
-      );
-    } else {
-      collectionList.replaceChildren(...collections.map(col => buildCollection(col)));
-    }
-
-    renderMarked();
-
-    if (window.lucide) lucide.createIcons();
-  }
-
-  const norm = value => value.normalize("NFC").toLowerCase().trim();
-
-  const typed = $("typed");
-  typed.placeholder = "Gõ âm rồi nhấn Enter · Phím số: đổi ô";
-
-  const filterKeys = () => {
-    const query = stripTones(norm(typed.value)).text;
-
-    keyEls.forEach(({ node, value }) => {
-      node.classList.toggle(
-        "opacity-25",
-        Boolean(query) && !norm(value).startsWith(query)
-      );
-    });
-  };
-
-  const pickTyped = () => {
-    const { text, mark } = stripTones(norm(typed.value));
-
-    if (!text || active < 0 || slots[active]?.locked) return;
-
-    const hit =
-      sounds.find(sound => norm(sound.v) === text) ||
-      sounds.find(sound => norm(sound.v).startsWith(text));
-
-    if (!hit) return;
-
-    choose(hit.type === "vow" && mark ? applyTone(hit.v, mark) : hit.v);
-  };
-
-  typed.addEventListener("input", filterKeys);
-
-  typed.addEventListener("keydown", event => {
-    if (event.isComposing) return;
-
-    if (event.key === "Enter") {
-      event.preventDefault();
-      pickTyped();
-    }
-  });
-
-  const openByNumber = number => {
-    const index = soundIndices()[number - 1];
-
-    if (index === undefined) {
-      showToast(`Không có ô ${number}`);
-      return;
-    }
-
-    if (slots[index].locked) {
-      showToast(`Ô ${number} đang bị khóa`);
-      return;
-    }
-
-    open(index);
-  };
-
-  const showTones = (base, current) => {
-    $("toneLabel").textContent = `Chọn dấu cho "${base}"`;
-
-    $("toneKeys").replaceChildren(
-      ...TONES.map(tone => {
-        const value = applyTone(base, tone.mark);
-
-        const button = el(
-          "button",
-          `w-full flex flex-col items-center justify-center aspect-square rounded-xl ${KEY} ${FILL.vow}` +
-          (current === value ? " ring-4 ring-hl" : ""),
-          "",
-          el("span", "text-xl font-semibold leading-none", value),
-          el("span", "mt-1 text-[10px] leading-none opacity-75", tone.name)
-        );
-
-        button.type = "button";
-        button.title = tone.name;
-
-        button.onclick = event => {
-          event.stopPropagation();
-          choose(value);
-        };
-
-        return button;
-      })
-    );
-
-    $("tones").classList.remove("hidden");
-
-    keyEls.forEach(({ node, value }) => {
-      const selected = value === base;
-      node.classList.toggle("ring-4", selected);
-      node.classList.toggle("ring-hl", selected);
-    });
-  };
-
-  function open(index) {
-    if (slots[index]?.kind !== "sound" || slots[index].locked) return;
-
-    active = index;
-
-    const current = slots[index].value;
-
-    keyEls = [];
-
-    const textSize = value => {
-      const length = [...value].length;
-      return length > 2 ? "text-sm" : length === 2 ? "text-lg" : "text-xl";
-    };
-
-    const createKey = ({ v, type }) => {
-      const node = document.createElement("button");
-
-      node.type = "button";
-      node.textContent = v;
-
-      node.className =
-        `w-[52px] h-[52px] min-w-0 flex items-center justify-center rounded-xl ` +
-        `font-semibold transition-opacity ${textSize(v)} ${KEY} ${FILL[type]}`;
-
-      node.onclick = event => {
-        event.stopPropagation();
-        type === "vow" ? showTones(v, current) : choose(v);
-      };
-
-      keyEls.push({ node, value: v });
-      return node;
-    };
-
-    const eraser = mkBtn(
-      `w-[52px] h-[52px] flex items-center justify-center rounded-xl bg-bg text-muted ${KEY}`,
-      "Bỏ chọn",
-      '<i data-lucide="eraser" class="size-5"></i>'
-    );
-
-    eraser.onclick = event => {
-      event.stopPropagation();
-      choose("");
-    };
-
-    $("groups").replaceChildren(
-      ...GROUPS.map(({ title, items }, groupIndex) => {
-        const group = el("div", "flex flex-col gap-2 w-full min-w-0");
-
-        const grid = el(
-          "div",
-          "grid grid-cols-[repeat(auto-fill,52px)] justify-start content-start gap-2"
-        );
-
-        grid.append(
-          ...items.map(createKey),
-          ...(groupIndex === GROUPS.length - 1 ? [eraser] : [])
-        );
-
-        group.append(
-          el(
-            "p",
-            "text-xs font-semibold uppercase tracking-wide text-muted",
-            `${title} · ${items.length}`
-          ),
-          grid
-        );
-
-        return group;
-      })
-    );
-
-    $("panel").classList.replace("hidden", "flex");
-    $("tones").classList.add("hidden");
-
-    const currentBase = stripTones(current).text;
-
-    if (typeOf[currentBase] === "vow") {
-      showTones(currentBase, current);
-    }
-
-    typed.value = "";
-
-    filterKeys();
-    render();
-
-    typed.focus();
-
-    if (window.lucide) lucide.createIcons();
-  }
-
-  function close() {
-    active = -1;
-    $("panel").classList.replace("flex", "hidden");
-    render();
-  }
-
-  document.addEventListener("click", event => {
-    if (suppressClick) return;
-    if (!$("sheet").contains(event.target)) close();
-  });
-
-  document.addEventListener("keydown", event => {
-    if (event.key === "Escape") {
-      close();
-      return;
-    }
-
-    if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
-    if (event.target instanceof HTMLInputElement && event.target !== typed) return;
-    if (event.target instanceof HTMLSelectElement) return;
-    if (event.target instanceof HTMLElement && event.target.isContentEditable) return;
-    if (/^[1-9]$/.test(event.key)) {
-      event.preventDefault();
-      openByNumber(Number(event.key));
-    }
-  });
-
-  render();
-  renderSavedWords();
+  applyPanels();
+  renderWords();
   renderSentence();
   renderSavedSentences();
-  renderCollections();
-  persist(slots);
+  persist();
 }
 
-(async () => {
-  try {
-    const response = await fetch("./data/metadata.json");
+init();
 
-    if (!response.ok) {
-      throw new Error(`Không thể tải dữ liệu: HTTP ${response.status}`);
-    }
-
-    init(await response.json());
-  } catch (error) {
-    console.error(error);
-    $("row").replaceChildren(el("p", "text-muted", "Không thể tải dữ liệu âm."));
-  }
-
-  if (window.lucide) lucide.createIcons();
-})();
+if (window.lucide) lucide.createIcons();

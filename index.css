@@ -1,0 +1,112 @@
+::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+html,
+body {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+#aboutPopup {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .26s cubic-bezier(.22, 1, .36, 1);
+  will-change: opacity;
+}
+
+#aboutPopup.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+#aboutSheet {
+  opacity: 0;
+  transform: translate3d(0, 10px, 0) scale(.97);
+  transition: transform .32s cubic-bezier(.22, 1, .36, 1), opacity .24s cubic-bezier(.22, 1, .36, 1);
+  will-change: transform, opacity;
+}
+
+#aboutPopup.is-open #aboutSheet {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+}
+
+.about-dino-wrap {
+  position: relative;
+  display: flex;
+  flex: 0 0 48%;
+  min-width: 0;
+  height: 340px;
+  align-items: center;
+  justify-content: center;
+}
+
+.about-dino-bg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 310px;
+  height: 310px;
+  transform: translate(-50%, -50%);
+  background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 45%, #b8573a 100%);
+  -webkit-mask: url("https://api.iconify.design/boxicons/dino.svg") center/contain no-repeat;
+  mask: url("https://api.iconify.design/boxicons/dino.svg") center/contain no-repeat;
+  opacity: .25;
+  pointer-events: none;
+}
+
+.about-gradient {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(circle at 25% 50%, color-mix(in srgb, var(--con) 15%, transparent), transparent 65%),
+    radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--vow) 12%, transparent), transparent 50%);
+  pointer-events: none;
+}
+
+#themeToggle {
+  -webkit-tap-highlight-color: transparent;
+}
+
+#themeToggle iconify-icon {
+  color: var(--vow);
+  transition: transform .3s ease, color .3s ease;
+}
+
+#themeToggle:hover iconify-icon {
+  transform: rotate(20deg) scale(1.2);
+}
+
+#themeToggle:active iconify-icon {
+  transform: rotate(25deg) scale(.85);
+}
+
+@media(max-width:480px) {
+  #aboutSheet {
+    max-width: 100%;
+    min-height: 280px;
+  }
+
+  .about-dino-wrap {
+    flex-basis: 44%;
+    height: 250px;
+  }
+
+  .about-dino-bg {
+    width: 210px;
+    height: 210px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  #aboutPopup,
+  #aboutSheet,
+  #themeToggle iconify-icon {
+    transition: none;
+  }
+}

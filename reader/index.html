@@ -541,13 +541,17 @@
       }
 
       .workspace {
-        flex-direction: row;
-        align-items: flex-start;
+        display: grid;
+        grid-template-columns: 15rem minmax(0, 1fr) 15rem;
+        align-items: start;
         gap: 1.75rem;
       }
 
       .doc-column {
-        order: 1;
+        grid-column: 2;
+        grid-row: 1;
+        max-width: none;
+        margin: 0;
         padding-top: 0;
       }
 
@@ -563,6 +567,8 @@
       }
 
       .rail {
+        grid-column: 1;
+        grid-row: 1;
         order: 0;
         z-index: auto;
         margin: 0;
@@ -574,6 +580,8 @@
       }
 
       .toc {
+        grid-column: 3;
+        grid-row: 1;
         order: 2;
         padding: .6rem;
       }
@@ -829,7 +837,7 @@
     }
 
     .doc td {
-      border: 1px solid color-mix(in srgb, var(--text) 16%, transparent);
+      border: 1px solid color-mix(in srgb, var(--text) 30%, transparent);
       padding: .35em .5em;
       vertical-align: top;
       overflow-wrap: anywhere;
@@ -837,7 +845,7 @@
 
     .doc table.h tr:first-child td {
       font-weight: 700;
-      background: color-mix(in srgb, var(--text) 10%, transparent);
+      background: color-mix(in srgb, var(--text) 8%, transparent);
     }
 
     .doc figure {
@@ -874,6 +882,11 @@
 
     .doc [data-kind] {
       --ml: 1.5rem;
+    }
+
+    .doc [data-kind=poem],
+    .doc [data-kind=dropcap] {
+      --ml: 0px;
     }
 
     .mk-host {
@@ -976,6 +989,81 @@
       height: .8rem;
       border-radius: 50%;
     }
+
+    .doc [data-nid] {
+      border-bottom: 1px dotted color-mix(in srgb, var(--text) 60%, transparent);
+      cursor: help;
+    }
+
+    .doc [data-nid][data-n]::after {
+      content: attr(data-n);
+      font-size: .65em;
+      font-weight: 700;
+      line-height: 0;
+      vertical-align: super;
+      margin-left: 1px;
+      font-style: normal;
+      text-decoration: none;
+      color: #3b82f6;
+      -webkit-text-fill-color: #3b82f6;
+      background: none;
+      user-select: none;
+    }
+
+    .notes {
+      margin-top: 1.5rem;
+      padding-top: .75rem;
+      border-top: 1px solid color-mix(in srgb, var(--text) 15%, transparent);
+      font-size: .875rem;
+      text-align: left;
+    }
+
+    .notes b {
+      display: block;
+      margin-bottom: .35rem;
+      font-size: .75rem;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .note-row {
+      display: flex;
+      align-items: flex-start;
+      gap: .5rem;
+      width: 100%;
+      padding: .3rem .4rem;
+      border: 0;
+      border-radius: .5rem;
+      background: none;
+      color: var(--text);
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .note-row:hover {
+      background: color-mix(in srgb, var(--text) 8%, transparent);
+    }
+
+    .note-row sup {
+      flex: none;
+      margin-top: .1rem;
+      font-size: .75rem;
+      font-weight: 700;
+      color: #3b82f6;
+    }
+
+    .note-row span {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .note-row small {
+      display: block;
+      color: var(--muted);
+      font-size: inherit;
+    }
   </style>
 </head>
 
@@ -1022,6 +1110,7 @@
       <div class="doc-column">
         <article id="doc" class="doc" hidden></article>
         <div id="legend" class="legend" hidden></div>
+        <div id="notes" class="notes" hidden></div>
       </div>
 
       <aside id="toc" class="panel toc" aria-label="Mục lục" hidden></aside>
@@ -1188,6 +1277,7 @@
         courier: '"Courier New", Courier, monospace', comic: '"Comic Sans MS", "Comic Neue", cursive'
       };
       const ALIGNS = ["left", "center", "right", "justify"];
+      const SPECIAL_KINDS = ["quote", "cite", "poem", "dropcap"];
       const MAX_SIZE = 2 * 1024 * 1024;
       const TOC_PREF_KEY = "mixer-toc-visible";
       const MARKS_KEY = "mixer-marks";
@@ -1256,6 +1346,277 @@
       };
       const textSpan = (text, cls) => { const s = mk("span", cls); s.textContent = text; return s; };
 
+      const S = (def, min, max) => ({ def, min, max });
+      const PK = (def, opts) => ({ def, opts });
+      const BL = def => ({ def, bool: true });
+      const WEIGHTS = ["400", "500", "600", "700", "800", "900"];
+      const head = (size, lh, top, bottom) => ({
+        size: S(size, 10, 120), weight: PK("700", WEIGHTS),
+        lh: S(lh, 0.8, 3), top: S(top, 0, 5), bottom: S(bottom, 0, 5)
+      });
+      const SCHEMA = {
+        page: { top: S(8, 0, 200), right: S(12, 0, 300), bottom: S(8, 0, 200), left: S(12, 0, 300) },
+        p: { lh: S(1.63, 1, 3), gap: S(0, 0, 3), indent: S(2, 0, 10) },
+        h1: head(36, 1.2, 0.4, 0.2), h2: head(30, 1.25, 0.4, 0.2),
+        h3: head(24, 1.3, 0.35, 0.15), h4: head(20, 1.35, 0.3, 0.1),
+        quote: {
+          size: S(1.15, 0.6, 3), italic: BL(true), align: PK("center", ALIGNS),
+          top: S(0.6, 0, 5), bottom: S(0.2, 0, 5), side: S(1.5, 0, 10)
+        },
+        cite: {
+          size: S(0.9, 0.5, 2), opacity: S(0.75, 0.2, 1), align: PK("right", ALIGNS),
+          bottom: S(0.6, 0, 5), side: S(1.5, 0, 10)
+        },
+
+        poem: {
+          size: S(1, 0.6, 3), lh: S(1.7, 1, 3), italic: BL(false),
+          top: S(0.6, 0, 5), bottom: S(0.6, 0, 5)
+        },
+
+        dropcap: {
+          lines: S(3, 2, 6), fit: S(1, 0.7, 1.3), space: S(0.02, -0.2, 1),
+          weight: PK("700", WEIGHTS)
+        }
+      };
+
+      function cleanStyle(v) {
+        const src = v && typeof v === "object" && !Array.isArray(v) ? v : {};
+        const out = {};
+        Object.entries(SCHEMA).forEach(([g, fields]) => {
+          const raw = src[g] && typeof src[g] === "object" ? src[g] : {};
+          out[g] = {};
+          Object.entries(fields).forEach(([k, spec]) => {
+            const val = raw[k];
+            if (spec.bool) out[g][k] = typeof val === "boolean" ? val : spec.def;
+            else if (spec.opts) out[g][k] = spec.opts.includes(val) ? val : spec.def;
+            else {
+              const n = Number(val);
+              out[g][k] = val === "" || val === null || val === undefined || !Number.isFinite(n)
+                ? spec.def
+                : Math.round(Math.min(spec.max, Math.max(spec.min, n)) * 100) / 100;
+            }
+          });
+        });
+        return out;
+      }
+
+      function readFormat(d) {
+        const o = d && typeof d === "object" && !Array.isArray(d) ? d : {};
+        return {
+          style: cleanStyle(o.docStyle),
+          size: num(o.docSize, 8, 200) ?? 18,
+          font: typeof o.docFont === "string" && FONTS[o.docFont] ? o.docFont : "arial"
+        };
+      }
+
+      let dcMetrics = { asc: 0.905, desc: 0.212, cap: 0.716 };
+      const metricsCache = new Map();
+
+      function measureFontMetrics(family) {
+        if (metricsCache.has(family)) return metricsCache.get(family);
+
+        let result = { asc: 0.905, desc: 0.212, cap: 0.716 };
+
+        try {
+          const ctx = document.createElement("canvas").getContext("2d");
+          ctx.font = `100px ${family}`;
+          const m = ctx.measureText("H");
+
+          const cap = m.actualBoundingBoxAscent / 100;
+          const asc = m.fontBoundingBoxAscent / 100;
+          const desc = m.fontBoundingBoxDescent / 100;
+
+          if ([cap, asc, desc].every(v => Number.isFinite(v) && v > 0)) {
+            result = { asc, desc, cap };
+          }
+        } catch { }
+
+        metricsCache.set(family, result);
+        return result;
+      }
+
+      const styleCss = s => {
+        const dc = s.dropcap;
+        const { asc, desc, cap } = dcMetrics;
+        const lh = s.p.lh;
+        const n = dc.lines;
+        const k = (((n - 1) * lh) / cap + 1) * dc.fit;
+        const boxH = n * lh - 0.01;
+        const capTopNow = boxH / 2 - (k * (asc + desc)) / 2 + k * (asc - cap);
+        const capTopWant = lh / 2 + (asc - desc) / 2 - cap;
+        const off = (capTopWant - capTopNow) / k;
+
+        return [
+          `.doc.doc{line-height:${s.p.lh};padding:${s.page.top}px ${s.page.right}px ${s.page.bottom}px calc(${s.page.left}px + 2.25rem)}`,
+          `.doc.doc p:not([data-kind]){margin-bottom:${s.p.gap}em}`,
+          `.doc.doc [data-indent]{text-indent:${s.p.indent}em}`,
+          ...[1, 2, 3, 4].map(i => {
+            const h = s["h" + i];
+            return `.doc.doc h${i}{font-size:${h.size}px;font-weight:${h.weight};line-height:${h.lh};margin:${h.top}em 0 ${h.bottom}em}`;
+          }),
+          `.doc.doc [data-kind="quote"]{--ml:${s.quote.side}rem;text-align:${s.quote.align};` +
+          `font-style:${s.quote.italic ? "italic" : "normal"};font-size:${s.quote.size}em;` +
+          `margin:${s.quote.top}em ${s.quote.side}rem ${s.quote.bottom}em}`,
+          `.doc.doc [data-kind="cite"]{--ml:${s.cite.side}rem;text-align:${s.cite.align};font-size:${s.cite.size}em;` +
+          `opacity:${s.cite.opacity};margin:0 ${s.cite.side}rem ${s.cite.bottom}em}`,
+          `.doc.doc [data-kind="poem"]{text-align:left;font-size:${s.poem.size}em;` +
+          `line-height:${s.poem.lh};font-style:${s.poem.italic ? "italic" : "normal"};` +
+          `max-width:100%;margin:0 auto}`,
+          `.doc.doc :not([data-kind="poem"]) + [data-kind="poem"],` +
+          `.doc.doc [data-kind="poem"]:first-child{margin-top:${s.poem.top}em}`,
+          `.doc.doc [data-kind="poem"]:not(:has(+ [data-kind="poem"])){margin-bottom:${s.poem.bottom}em}`,
+          `.doc.doc [data-kind="dropcap"]{display:flow-root;margin:.3em 0}`,
+          `.doc.doc [data-kind="dropcap"]::first-letter{float:left;font-size:${k.toFixed(3)}em;` +
+          `line-height:${(boxH / k).toFixed(4)};font-weight:${dc.weight};padding:0;` +
+          `margin:${off.toFixed(4)}em calc(-1 * var(--dc-rb, 0em) + ${dc.space}em) ${(-off).toFixed(4)}em 0}`
+        ].join("\n");
+      };
+
+      const fmtStyle = document.createElement("style");
+      document.head.append(fmtStyle);
+
+      let curFmt = readFormat(null);
+
+      function applyFormat(fmt) {
+        const f = fmt || readFormat(null);
+        curFmt = f;
+        dcMetrics = measureFontMetrics(FONTS[f.font]);
+        fmtStyle.textContent = styleCss(f.style);
+        const el = $("doc");
+        el.style.setProperty("--doc-size", f.size + "px");
+        el.style.setProperty("--doc-font", FONTS[f.font]);
+      }
+
+      function fitPoems() {
+        const docEl = $("doc");
+        if (docEl.hidden) return;
+
+        let group = [];
+
+        const flush = () => {
+          if (!group.length) return;
+
+          group.forEach(node => {
+            node.style.width = "max-content";
+            node.dataset.pfit = "1";
+          });
+
+          const width = Math.ceil(
+            Math.max(0, ...group.map(node => node.getBoundingClientRect().width))
+          );
+
+          group.forEach(node => {
+            node.style.width = `${width}px`;
+          });
+
+          group = [];
+        };
+
+        [...docEl.children].forEach(node => {
+          if (node.dataset?.kind === "poem") {
+            group.push(node);
+            return;
+          }
+
+          flush();
+
+          if (node.dataset?.pfit) {
+            node.style.width = "";
+            delete node.dataset.pfit;
+          }
+        });
+
+        flush();
+      }
+
+      function fitDropcaps() {
+        const docEl = $("doc");
+        const nodes = docEl.querySelectorAll('[data-kind="dropcap"]');
+        if (!nodes.length) return;
+
+        const ctx = document.createElement("canvas").getContext("2d");
+        ctx.font = `${curFmt.style.dropcap.weight} 100px ${FONTS[curFmt.font]}`;
+
+        nodes.forEach(node => {
+          const text = node.textContent.replace(/[\u200b\s]+/g, " ").trimStart();
+          const match = /^[\p{P}\p{S}]*[\p{L}\p{N}]\p{M}*[\p{P}\p{S}]*/u.exec(text);
+
+          let rb = 0;
+          if (match) {
+            const m = ctx.measureText(match[0]);
+            const value = (m.width - m.actualBoundingBoxRight) / 100;
+            if (Number.isFinite(value)) rb = Math.min(0.5, Math.max(-0.2, value));
+          }
+
+          const css = `${rb.toFixed(4)}em`;
+          if (node.style.getPropertyValue("--dc-rb") !== css) node.style.setProperty("--dc-rb", css);
+        });
+      }
+
+      function fitBlocks() {
+        fitDropcaps();
+        fitPoems();
+      }
+
+      let docWidth = 0;
+      if (typeof ResizeObserver === "function") {
+        new ResizeObserver(() => {
+          const width = $("doc").clientWidth;
+          if (width === docWidth) return;
+          docWidth = width;
+          fitPoems();
+        }).observe($("doc"));
+      }
+
+      document.fonts?.ready.then(() => {
+        metricsCache.clear();
+        applyFormat(curFmt);
+        fitBlocks();
+      });
+
+      function numberNotes() {
+        const box = $("notes");
+        box.replaceChildren();
+
+        const groups = new Map();
+        $("doc").querySelectorAll("[data-nid]").forEach(n => {
+          const id = n.dataset.nid;
+          if (!groups.has(id)) groups.set(id, []);
+          groups.get(id).push(n);
+        });
+
+        box.hidden = groups.size === 0;
+        if (!groups.size) return;
+
+        box.append(Object.assign(mk("b"), { textContent: "Chú giải nghĩa" }));
+
+        let i = 0;
+        groups.forEach(nodes => {
+          i++;
+          nodes[nodes.length - 1].dataset.n = String(i);
+
+          const word = nodes.map(n => n.textContent).join("").replace(/[​\s]+/g, " ").trim();
+          const row = mk("button", "note-row");
+          row.type = "button";
+          row.title = "Đi tới chữ được chú giải";
+
+          const numEl = mk("sup");
+          numEl.textContent = String(i);
+
+          const strong = mk("strong");
+          strong.textContent = word;
+          const small = mk("small");
+          small.textContent = nodes[0].dataset.note || "";
+
+          const body = mk("span");
+          body.append(strong, small);
+
+          row.append(numEl, body);
+          row.addEventListener("click", () => goToSpot(nodes[0]));
+          box.append(row);
+        });
+      }
+
       function paint(node, c) {
         if (c === GR) {
           node.style.backgroundImage = GRAD;
@@ -1272,7 +1633,9 @@
           const c = r.gradient === true ? GR : color(r.color);
           const size = num(r.size, 8, 200);
           const font = FONTS[r.font];
-          const styled = c || size || font || r.bold || r.italic || r.underline;
+          const noteText = typeof r.note === "string" ? r.note.replace(/\s+/g, " ").trim().slice(0, 300) : "";
+          const nid = noteText && typeof r.nid === "string" && /^[\w-]{1,40}$/.test(r.nid) ? r.nid : null;
+          const styled = c || size || font || r.bold || r.italic || r.underline || nid;
 
           r.text.replace(/[\u200b\r]/g, "").replace(/\u00a0/g, " ").split("\n").forEach((part, i) => {
             if (i) parent.append(mk("br"));
@@ -1281,6 +1644,11 @@
 
             const s = mk("span");
             s.textContent = part;
+            if (nid) {
+              s.dataset.nid = nid;
+              s.dataset.note = noteText;
+              s.title = noteText;
+            }
             paint(s, c);
             if (size) s.style.fontSize = size + "px";
             if (font) s.style.fontFamily = font;
@@ -1568,7 +1936,11 @@
             (Array.isArray(b.rows) ? b.rows : []).slice(0, 50).forEach(row => {
               if (!Array.isArray(row)) return;
               const tr = table.insertRow();
-              row.slice(0, 12).forEach(cell => runs(cell, tr.insertCell()));
+              row.slice(0, 12).forEach(cell => {
+                const td = tr.insertCell();
+                runs(cell, td);
+                if (!td.firstChild) td.append(mk("br"));
+              });
             });
             const holder = mk("div", "tw");
             holder.append(table);
@@ -1577,7 +1949,7 @@
             return;
           }
 
-          const special = t === "quote" || t === "cite";
+          const special = SPECIAL_KINDS.includes(t);
           const node = mk(/^h[1-4]$/.test(t) ? t : "p");
           if (special) node.dataset.kind = t;
           if (t === "p" && b.indent === true) node.dataset.indent = "1";
@@ -1588,6 +1960,7 @@
           root.append(node);
         });
 
+        numberNotes();
         buildToc();
       }
 
@@ -1727,7 +2100,9 @@
         if (!d) return;
         activeDocIndex = i;
         $("doc").hidden = false;
+        applyFormat(d.fmt);
         render(d.blocks);
+        fitBlocks();
         showLegend(d.blocks, legend);
         renderLists();
         renderSpots();
@@ -1738,6 +2113,7 @@
         if (!data || typeof data !== "object") return null;
         if (Array.isArray(data)) return data;
         if (Array.isArray(data.blocks)) return data.blocks;
+        if (Array.isArray(data.sentenceBlocks)) return data.sentenceBlocks;
         if (Array.isArray(data.document?.blocks)) return data.document.blocks;
         if (typeof data.document === "string") {
           try {
@@ -1771,14 +2147,20 @@
               Object.assign(targetLegend, parsed.colorLegend);
             }
 
+            const fmt = readFormat(parsed);
+
             const mainBlocks = extractBlocks(parsed);
             if (Array.isArray(mainBlocks) && mainBlocks.length) {
-              const label = String(parsed?.title || parsed?.name || key);
+              const label = String(
+                parsed?.title || parsed?.name ||
+                (Array.isArray(parsed?.sentenceBlocks) ? "Bản nháp đang soạn" : key)
+              );
               targetDocs.push({
                 id: `local:${key}`,
                 label,
                 name: `[Local] ${label}`,
-                blocks: mainBlocks
+                blocks: mainBlocks,
+                fmt
               });
             }
 
@@ -1798,7 +2180,8 @@
                   id: `local:${key}#${idx}`,
                   label,
                   name: `[Local] ${label}`,
-                  blocks: sBlocks
+                  blocks: sBlocks,
+                  fmt
                 });
               }
             });
@@ -1812,17 +2195,18 @@
         const nextDocs = [];
         const nextLegend = data && typeof data.colorLegend === "object" && data.colorLegend ? { ...data.colorLegend } : {};
 
+        const fmt = readFormat(data);
         const main = extractBlocks(data);
         if (Array.isArray(main) && main.length) {
           const label = String(data?.title || data?.name || "Tài liệu hiện tại");
-          nextDocs.push({ id: "file:main", label, name: label, blocks: main });
+          nextDocs.push({ id: "file:main", label, name: label, blocks: main, fmt });
         }
 
         (Array.isArray(data?.savedSentences) ? data.savedSentences : []).forEach((s, i) => {
           const sBlocks = extractBlocks(s);
           if (Array.isArray(sBlocks) && sBlocks.length) {
             const label = typeof s?.name === "string" && s.name ? s.name : "Tệp " + (i + 1);
-            nextDocs.push({ id: `file:${i}`, label, name: label, blocks: sBlocks });
+            nextDocs.push({ id: `file:${i}`, label, name: label, blocks: sBlocks, fmt });
           }
         });
 

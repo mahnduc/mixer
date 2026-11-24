@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Mixer</title>
+  <meta name="description" content="Mixer made by Mạnh Đức.">
+  <meta name="author" content="mahnduc">
+  <meta name="theme-color" content="#f6f3ee" id="themeColor">
+  <link rel="canonical" href="https://mahnduc.github.io/mixer/">
+  <link rel="icon" type="image/svg+xml" href="https://api.iconify.design/boxicons/dino.svg?color=%23b8573a">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Mixer">
+  <meta property="og:locale" content="vi_VN">
+  <meta property="og:url" content="https://mahnduc.github.io/mixer/">
+  <meta property="og:title" content="Mixer">
+  <meta property="og:description" content="Mixer made by Mạnh Đức.">
+  <meta property="og:image" content="https://mahnduc.github.io/mixer/assets/boxicons--dino.png?v=2">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="512">
+  <meta property="og:image:height" content="512">
+  <meta property="og:image:alt" content="Mixer">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Mixer">
+  <meta name="twitter:description" content="Mixer made by Mạnh Đức.">
+  <meta name="twitter:image" content="https://mahnduc.github.io/mixer/assets/boxicons--dino.png?v=2">
+
+  <script>
+    (() => {
+      try {
+        const savedTheme = localStorage.getItem("mixer-theme");
+        if (savedTheme === "light" || savedTheme === "dark") {
+          document.documentElement.dataset.theme = savedTheme;
+        }
+      } catch (error) {
+        console.warn("Không thể đọc thiết lập giao diện:", error);
+      }
+    })();
+  </script>
+
+  <link rel="stylesheet" href="../theme.css">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+  <script src="https://code.iconify.design/iconify-icon/3.0.0/iconify-icon.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: Object.fromEntries(
+            ["bg", "text", "muted", "con", "con-t", "vow", "vow-t", "hl"]
+              .map(k => [k, `var(--${k})`])
+          )
+        }
+      }
+    };
+  </script>
+
+  <style>
+    #aboutPopup {
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .26s cubic-bezier(.22, 1, .36, 1);
+      will-change: opacity;
+    }
+
+    #aboutPopup.is-open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    #aboutSheet {
+      opacity: 0;
+      transform: translate3d(0, 10px, 0) scale(.97);
+      transition: transform .32s cubic-bezier(.22, 1, .36, 1), opacity .24s cubic-bezier(.22, 1, .36, 1);
+      will-change: transform, opacity;
+    }
+
+    #aboutPopup.is-open #aboutSheet {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+
+    .about-dino-wrap {
+      position: relative;
+      display: flex;
+      flex: 0 0 48%;
+      min-width: 0;
+      height: 340px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .about-dino-bg {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 310px;
+      height: 310px;
+      transform: translate(-50%, -50%);
+      background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 45%, #b8573a 100%);
+      -webkit-mask: url("https://api.iconify.design/boxicons/dino.svg") center/contain no-repeat;
+      mask: url("https://api.iconify.design/boxicons/dino.svg") center/contain no-repeat;
+      opacity: .25;
+      pointer-events: none;
+    }
+
+    .about-gradient {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      background:
+        radial-gradient(circle at 25% 50%, color-mix(in srgb, var(--con) 15%, transparent), transparent 65%),
+        radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--vow) 12%, transparent), transparent 50%);
+      pointer-events: none;
+    }
+
+    #themeToggle {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #themeToggle iconify-icon {
+      color: var(--vow);
+      transition: transform .3s ease, color .3s ease;
+    }
+
+    #themeToggle:hover iconify-icon {
+      transform: rotate(20deg) scale(1.2);
+    }
+
+    #themeToggle:active iconify-icon {
+      transform: rotate(25deg) scale(.85);
+    }
+
+    @media(max-width:480px) {
+      #aboutSheet {
+        max-width: 100%;
+        min-height: 280px;
+      }
+
+      .about-dino-wrap {
+        flex-basis: 44%;
+        height: 250px;
+      }
+
+      .about-dino-bg {
+        width: 210px;
+        height: 210px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+
+      #aboutPopup,
+      #aboutSheet,
+      #themeToggle iconify-icon {
+        transition: none;
+      }
+    }
+  </style>
+</head>
+
+<body class="relative min-h-[100svh] flex flex-col overflow-x-hidden bg-bg text-text font-sans">
+  <header class="relative z-10 flex items-center px-5 pt-[max(1.25rem,env(safe-area-inset-top))]">
+    <div class="inline-flex items-start">
+      <button id="aboutTrigger" type="button" aria-label="Thông tin về Mixer" aria-haspopup="dialog"
+        aria-expanded="false"
+        class="flex items-center gap-2.5 rounded-xl text-3xl font-extrabold outline-none transition hover:opacity-80 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-hl">
+        <iconify-icon icon="boxicons:dino" class="size-8 text-con"></iconify-icon>
+        <span class="bg-gradient-to-r from-con to-vow bg-clip-text text-transparent">Mixer</span>
+      </button>
+
+      <button id="themeToggle" type="button" aria-label="Chuyển sang giao diện tối" title="Chuyển giao diện sáng/tối"
+        class="-ml-1 -mt-1 flex size-5 shrink-0 items-center justify-center rounded-full text-muted transition-all duration-200 hover:text-con hover:scale-125 active:scale-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-hl">
+        <iconify-icon id="themeIcon" icon="lucide:moon" class="size-4"></iconify-icon>
+      </button>
+    </div>
+  </header>
+
+  <main class="flex-1 flex flex-col items-center px-4 pt-[10vh] pb-12">
+    <div class="flex flex-col items-center gap-6">
+      <div id="row" class="flex flex-wrap justify-center gap-3 sm:gap-5"></div>
+      <p id="result" aria-live="polite" class="min-h-12 text-4xl font-bold tracking-wide"></p>
+      <button id="confirm" type="button" disabled
+        class="flex items-center gap-2 px-8 py-3 rounded-full font-bold text-con-t bg-gradient-to-r from-con to-vow shadow-[0_8px_24px_color-mix(in_srgb,var(--con)_35%,transparent)] transition duration-150 ease-out enabled:hover:brightness-110 enabled:hover:-translate-y-0.5 enabled:active:scale-95 enabled:active:translate-y-0 enabled:active:brightness-90 enabled:active:shadow-[0_2px_8px_color-mix(in_srgb,var(--con)_35%,transparent)] focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-hl opacity-40 disabled:cursor-not-allowed">
+        <iconify-icon icon="andrsrxn:cursor-click" class="size-5 shrink-0"></iconify-icon>
+        Mix
+      </button>
+    </div>
+
+    <section class="w-[min(92vw,640px)] mt-12">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-bold">Danh sách từ đã ghép</h2>
+        <span id="count" class="text-sm text-muted">0 từ</span>
+      </div>
+
+      <div id="savedWords" class="border-t border-[color-mix(in_srgb,var(--text)_15%,transparent)]">
+        <p class="py-6 text-center text-muted">Chưa có từ nào được lưu.</p>
+      </div>
+    </section>
+  </main>
+
+  <div id="panel"
+    class="hidden fixed inset-0 z-50 overflow-auto bg-black/30 p-3 sm:p-5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+    <section id="sheet"
+      class="w-full max-w-5xl min-w-0 m-auto p-4 sm:p-6 rounded-3xl bg-bg shadow-[0_20px_60px_rgba(0,0,0,.35)]">
+      <label
+        class="mb-5 flex items-center gap-3 px-4 h-12 rounded-2xl bg-[color-mix(in_srgb,var(--text)_8%,transparent)]">
+        <i data-lucide="keyboard" class="size-5 shrink-0 text-muted"></i>
+        <input id="typed" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
+          placeholder="Gõ âm rồi nhấn Enter" aria-label="Gõ âm từ bàn phím"
+          class="flex-1 w-0 min-w-0 bg-transparent outline-none text-base placeholder:text-muted">
+      </label>
+
+      <div id="groups" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full min-w-0"></div>
+
+      <div id="tones" class="hidden mt-5 pt-5 border-t border-[color-mix(in_srgb,var(--text)_15%,transparent)]">
+        <p id="toneLabel" class="mb-3 text-sm font-medium text-muted"></p>
+        <div id="toneKeys" class="grid grid-cols-3 sm:grid-cols-6 gap-2 w-full"></div>
+      </div>
+    </section>
+  </div>
+
+  <div id="aboutPopup"
+    class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-3 sm:p-5 backdrop-blur-md">
+    <section id="aboutSheet" role="dialog" aria-modal="true" aria-labelledby="aboutTitle"
+      class="relative isolate w-full max-w-2xl min-h-[400px] overflow-hidden rounded-[2rem] bg-bg shadow-[0_20px_60px_rgba(0,0,0,.35)]">
+      <div class="about-gradient"></div>
+
+      <button id="aboutClose" type="button" aria-label="Đóng"
+        class="absolute right-5 top-5 z-20 flex size-10 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--text)_8%,transparent)] text-muted transition hover:bg-[color-mix(in_srgb,var(--text)_15%,transparent)] hover:text-text active:scale-90">
+        <i data-lucide="x" class="size-5"></i>
+      </button>
+
+      <div class="relative z-10 flex min-h-[400px] items-center gap-1 px-2 py-8 sm:px-4">
+        <div class="about-dino-wrap" aria-hidden="true">
+          <div class="about-dino-bg"></div>
+        </div>
+
+        <div class="flex min-w-0 flex-1 flex-col items-start justify-center pl-1 pr-5 sm:pl-2 sm:pr-8">
+          <h2 id="aboutTitle"
+            class="text-6xl sm:text-7xl font-black tracking-tight bg-gradient-to-r from-con to-vow bg-clip-text text-transparent drop-shadow-sm">
+            Mixer
+          </h2>
+          <p class="mt-3 text-base sm:text-lg font-medium text-muted">
+            by <span class="font-bold text-text">mahnduc</span>
+          </p>
+          <div class="mt-8 flex flex-wrap items-center gap-3">
+            <a href="../archive/" target="_blank" rel="noopener noreferrer"
+              class="inline-flex items-center justify-center gap-2 rounded-xl border border-[color-mix(in_srgb,var(--text)_16%,transparent)] bg-[color-mix(in_srgb,var(--text)_7%,transparent)] px-5 py-3.5 text-sm font-bold text-text transition hover:bg-[color-mix(in_srgb,var(--text)_13%,transparent)] active:scale-[.97]">
+              <i data-lucide="book-open" class="size-4"></i>
+              Chế độ đọc
+            </a>
+            <a href="https://github.com/mahnduc/mixer" target="_blank" rel="noopener noreferrer"
+              class="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-con to-vow px-5 py-3.5 text-sm font-bold text-con-t shadow-[0_6px_24px_color-mix(in_srgb,var(--con)_30%,transparent)] transition hover:brightness-110 active:scale-[.97]">
+              <i data-lucide="github" class="size-4"></i>
+              GitHub
+              <i data-lucide="external-link" class="size-3.5"></i>
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="./app.js"></script>
+
+  <script>
+    if (window.lucide) {
+      lucide.createIcons();
+    }
+  </script>
+
+  <script>
+    (() => {
+      const root = document.documentElement;
+      const toggle = document.getElementById("themeToggle");
+      const icon = document.getElementById("themeIcon");
+      const themeColor = document.getElementById("themeColor");
+
+      if (!toggle || !icon) return;
+
+      const STORAGE_KEY = "mixer-theme";
+      const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+
+      function getCurrentTheme() {
+        const manualTheme = root.dataset.theme;
+        if (manualTheme === "light" || manualTheme === "dark") {
+          return manualTheme;
+        }
+        return mediaQuery.matches ? "dark" : "light";
+      }
+
+      function updateThemeUI(theme) {
+        const isDark = theme === "dark";
+        icon.setAttribute("icon", isDark ? "lucide:sun" : "lucide:moon");
+        toggle.setAttribute("aria-label", isDark ? "Chuyển sang giao diện sáng" : "Chuyển sang giao diện tối");
+        toggle.setAttribute("title", isDark ? "Chuyển sang giao diện sáng" : "Chuyển sang giao diện tối");
+        if (themeColor) {
+          themeColor.setAttribute("content", isDark ? "#181a1d" : "#f6f3ee");
+        }
+      }
+
+      function setTheme(theme, save = true) {
+        if (theme !== "light" && theme !== "dark") return;
+        root.dataset.theme = theme;
+        if (save) {
+          try {
+            localStorage.setItem(STORAGE_KEY, theme);
+          } catch (error) {
+            console.warn("Không thể lưu giao diện:", error);
+          }
+        }
+        updateThemeUI(theme);
+      }
+
+      updateThemeUI(getCurrentTheme());
+
+      toggle.addEventListener("click", () => {
+        const nextTheme = getCurrentTheme() === "dark" ? "light" : "dark";
+        setTheme(nextTheme);
+      });
+
+      mediaQuery.addEventListener("change", () => {
+        if (!root.dataset.theme) {
+          updateThemeUI(getCurrentTheme());
+        }
+      });
+    })();
+  </script>
+
+  <script>
+    (() => {
+      const trigger = document.getElementById("aboutTrigger");
+      const popup = document.getElementById("aboutPopup");
+      const sheet = document.getElementById("aboutSheet");
+      const closeButton = document.getElementById("aboutClose");
+
+      if (!trigger || !popup || !sheet || !closeButton) return;
+
+      const CLOSE_MS = 240;
+      let previousOverflow = "";
+      let closeTimer = null;
+      let isOpen = false;
+
+      function openAbout({ focusClose = true, instant = false } = {}) {
+        if (isOpen) return;
+        isOpen = true;
+
+        if (closeTimer) {
+          clearTimeout(closeTimer);
+          closeTimer = null;
+        }
+
+        previousOverflow = document.body.style.overflow;
+        popup.classList.remove("hidden");
+        document.body.style.overflow = "hidden";
+        trigger.setAttribute("aria-expanded", "true");
+
+        if (instant) {
+          popup.classList.add("is-open");
+        } else {
+          void popup.offsetWidth;
+          requestAnimationFrame(() => {
+            if (isOpen) popup.classList.add("is-open");
+          });
+        }
+
+        if (focusClose) {
+          requestAnimationFrame(() => {
+            if (isOpen) closeButton.focus({ preventScroll: true });
+          });
+        }
+      }
+
+      function closeAbout({ restoreFocus = true } = {}) {
+        if (!isOpen) return;
+        isOpen = false;
+
+        popup.classList.remove("is-open");
+        trigger.setAttribute("aria-expanded", "false");
+        document.body.style.overflow = previousOverflow;
+
+        if (restoreFocus) {
+          trigger.focus({ preventScroll: true });
+        }
+
+        if (closeTimer) clearTimeout(closeTimer);
+        closeTimer = setTimeout(() => {
+          if (!isOpen) {
+            popup.classList.add("hidden");
+          }
+        }, CLOSE_MS);
+      }
+
+      trigger.addEventListener("click", () => openAbout({ focusClose: true }));
+      closeButton.addEventListener("click", () => closeAbout({ restoreFocus: true }));
+
+      popup.addEventListener("click", event => {
+        if (event.target === popup) {
+          closeAbout({ restoreFocus: true });
+        }
+      });
+
+      sheet.addEventListener("click", event => {
+        event.stopPropagation();
+      });
+
+      document.addEventListener("keydown", event => {
+        if (event.key === "Escape" && isOpen) {
+          closeAbout({ restoreFocus: true });
+        }
+      });
+
+      openAbout({ focusClose: false, instant: false });
+    })();
+  </script>
+</body>
+
+</html>
