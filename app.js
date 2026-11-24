@@ -2,6 +2,7 @@ const $ = id => document.getElementById(id);
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
 const STORAGE_KEY = "mixer-app-state-v1";
+const READER_URL = "./reader/";
 const DRAG_THRESHOLD = 5;
 const SHADOW = "shadow-[0_10px_30px_rgba(0,0,0,.22)]";
 
@@ -508,6 +509,18 @@ const STYLE_SCHEMA = {
     gap: numSpec(0, 0, 3, 0.05),
     indent: numSpec(2, 0, 10, 0.5)
   },
+  list: {
+    bullet: pickSpec("disc", ["disc", "circle", "square", "none"]),
+    number: pickSpec("decimal", [
+      "decimal", "decimal-leading-zero", "lower-alpha", "upper-alpha", "lower-roman", "upper-roman"
+    ]),
+    indent: numSpec(1.75, 0, 8, 0.25),
+    gap: numSpec(0, 0, 2, 0.05),
+    top: numSpec(0.25, 0, 5, 0.05),
+    bottom: numSpec(0.25, 0, 5, 0.05),
+    inside: boolSpec(false),
+    markerBold: boolSpec(false)
+  },
   h1: headingSchema(36, 1.2, 0.4, 0.2),
   h2: headingSchema(30, 1.25, 0.4, 0.2),
   h3: headingSchema(24, 1.3, 0.35, 0.15),
@@ -580,7 +593,17 @@ const STYLE_PICK_LABELS = {
   "600": "600 · Bán đậm",
   "700": "700 · Đậm",
   "800": "800 · Rất đậm",
-  "900": "900 · Cực đậm"
+  "900": "900 · Cực đậm",
+  disc: "● Chấm tròn đặc",
+  circle: "○ Chấm tròn rỗng",
+  square: "■ Chấm vuông",
+  none: "Không có",
+  decimal: "1, 2, 3",
+  "decimal-leading-zero": "01, 02, 03",
+  "lower-alpha": "a, b, c",
+  "upper-alpha": "A, B, C",
+  "lower-roman": "i, ii, iii",
+  "upper-roman": "I, II, III"
 };
 
 const STYLE_SECTIONS = [
@@ -601,6 +624,20 @@ const STYLE_SECTIONS = [
       ["lh", "Giãn dòng", "×"],
       ["gap", "Cách đoạn", "em"],
       ["indent", "Thụt đầu dòng", "em"]
+    ]
+  ],
+  [
+    "Danh sách",
+    "list",
+    [
+      ["bullet", "Kiểu dấu đầu dòng", ""],
+      ["number", "Kiểu đánh số", ""],
+      ["indent", "Lùi vào", "rem"],
+      ["gap", "Cách giữa các mục", "em"],
+      ["top", "Cách trên", "em"],
+      ["bottom", "Cách dưới", "em"],
+      ["inside", "Dấu nằm trong lề", ""],
+      ["markerBold", "Dấu in đậm", ""]
     ]
   ],
   ...[1, 2, 3, 4].map(n => [
@@ -662,13 +699,21 @@ const STYLE_SECTIONS = [
 
 const docStyleCss = s => {
   const dc = s.dropcap;
+  const l = s.list;
   const k = ((dc.lines - 1) * s.p.lh) / dc.cap + 1;
   const dcLine = ((dc.lines * s.p.lh) / k) * 0.99;
+  const listBox =
+    `padding-left: ${l.indent}rem; margin: ${l.top}em 0 ${l.bottom}em; ` +
+    `list-style-position: ${l.inside ? "inside" : "outside"};`;
 
   return [
     `.rt-doc.rt-doc { line-height: ${s.p.lh}; }`,
     `.rt-doc p:not([data-kind]) { margin-bottom: ${s.p.gap}em; }`,
     `.rt-doc [data-indent="1"] { text-indent: ${s.p.indent}em; }`,
+    `.rt-doc ul { list-style-type: ${l.bullet}; ${listBox} }`,
+    `.rt-doc ol { list-style-type: ${l.number}; ${listBox} }`,
+    `.rt-doc li + li { margin-top: ${l.gap}em; }`,
+    l.markerBold ? `.rt-doc li::marker { font-weight: 700; }` : "",
     ...[1, 2, 3, 4].map(n => {
       const h = s[`h${n}`];
       return (
@@ -691,7 +736,7 @@ const docStyleCss = s => {
     `.rt-doc [data-kind="dropcap"]::first-letter { float: left; font-size: ${k.toFixed(3)}em; ` +
     `line-height: ${dcLine.toFixed(4)}; font-weight: ${dc.weight}; ` +
     `margin: 0 ${dc.gap}em 0 0; padding: 0; }`
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 };
 
 const runsToBlocks = runs => (runs.length ? [{ type: "p", align: null, runs }] : []);
@@ -943,7 +988,7 @@ function persist() {
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
-        version: 18,
+        version: 19,
         docSize,
         docFont,
         docStyle,
@@ -1918,10 +1963,11 @@ function init() {
   const clearSentenceBtn = makeToolBtn("eraser", "Xóa nội dung tệp");
   const exportSentenceBtn = makeToolBtn("download", "Xuất tài liệu ra tệp JSON (giữ Shift để đổi tên tệp)");
   const importSentenceBtn = makeToolBtn("upload", "Nhập tài liệu từ tệp JSON");
+  const readerBtn = makeToolBtn("book-open-text", "Mở tài liệu sang trang đọc (Alt+R)");
   const legendBtn = makeToolBtn("palette", "Đặt chú giải màu");
   const advBtn = makeToolBtn(
     "sliders-horizontal",
-    "Tùy chỉnh nâng cao: tiêu đề, đoạn văn, trích dẫn, thơ, chữ cái đầu to, lề"
+    "Tùy chỉnh nâng cao: tiêu đề, đoạn văn, danh sách, trích dẫn, thơ, chữ cái đầu to, lề"
   );
   advBtn.setAttribute("aria-pressed", "false");
   const noteBtn = makeToolBtn(
@@ -2522,6 +2568,7 @@ function init() {
       clearSentenceBtn,
       exportSentenceBtn,
       importSentenceBtn,
+      readerBtn,
       sentenceFile
     ),
     toolRow,
@@ -2635,11 +2682,6 @@ function init() {
     persistTimer = setTimeout(() => persist(), 250);
   };
 
-  window.addEventListener("pagehide", () => {
-    clearTimeout(persistTimer);
-    persist();
-  });
-
   const findSaved = id => savedSentences.find(s => s.id === id) || null;
   const currentSaved = () => findSaved(currentSavedId);
 
@@ -2680,6 +2722,59 @@ function init() {
     return name;
   };
 
+  const autoSaveFile = () => {
+    clearTimeout(persistTimer);
+
+    if (sentenceString().trim() && isDirty()) {
+      const blocks = cloneBlocks(sentenceBlocks);
+      const words = cleanWords(docWords);
+      const saved = currentSaved();
+
+      if (saved) {
+        saved.blocks = blocks;
+        saved.words = words;
+      } else if (savedSentences.length < MAX_SAVED_SENTENCES) {
+        const entry = {
+          id: crypto.randomUUID(),
+          name: uniqueName(defaultSentenceName(blocks)),
+          blocks,
+          words
+        };
+        savedSentences.unshift(entry);
+        currentSavedId = entry.id;
+        renderSavedSentences();
+      }
+    }
+
+    persist();
+  };
+
+  window.addEventListener("pagehide", autoSaveFile);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") autoSaveFile();
+  });
+
+  const openReader = () => {
+    if (!sentenceString().trim()) {
+      showToast("Tệp đang trống, chưa có gì để đọc");
+      return;
+    }
+
+    deselectImage();
+    autoSaveFile();
+
+    location.assign(`${READER_URL}?doc=${encodeURIComponent(`local:${STORAGE_KEY}`)}`);
+  };
+
+  bind(readerBtn, openReader);
+
+  document.addEventListener("keydown", event => {
+    if (event.altKey && !event.ctrlKey && !event.metaKey && event.code === "KeyR") {
+      event.preventDefault();
+      openReader();
+    }
+  });
+
   let outlineSig = null;
   let outlineClickGuard = false;
 
@@ -2705,18 +2800,20 @@ function init() {
     return end;
   };
 
+  const flashNode = (node, percent = 35) => {
+    if (reduceMotion) return;
+    node.animate(
+      [{ background: `color-mix(in srgb, var(--hl) ${percent}%, transparent)` }, { background: "transparent" }],
+      { duration: 900, easing: "ease-out" }
+    );
+  };
+
   const flashHeading = index => {
     const heading = headingEls()[index];
     if (!heading) return;
 
     heading.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "nearest" });
-
-    if (!reduceMotion) {
-      heading.animate(
-        [{ background: "color-mix(in srgb, var(--hl) 35%, transparent)" }, { background: "transparent" }],
-        { duration: 900, easing: "ease-out" }
-      );
-    }
+    flashNode(heading);
   };
 
   const goToHeading = index => {
@@ -2725,13 +2822,7 @@ function init() {
 
     heading.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
     caretIn(heading, false);
-
-    if (!reduceMotion) {
-      heading.animate(
-        [{ background: "color-mix(in srgb, var(--hl) 35%, transparent)" }, { background: "transparent" }],
-        { duration: 900, easing: "ease-out" }
-      );
-    }
+    flashNode(heading);
   };
 
   const moveSection = (from, to, after) => {
@@ -2899,7 +2990,7 @@ function init() {
 
     const items = headingEls().map(h => ({
       level: headingLevel(h),
-      text: h.textContent.replace(/\u200b/g, "").trim()
+      text: h.textContent.replace(/​/g, "").trim()
     }));
 
     const sig = items.map(i => `${i.level}:${i.text}`).join("\n");
@@ -2999,6 +3090,7 @@ function init() {
 
     saveSentenceBtn.disabled = !trimmed;
     copySentenceBtn.disabled = !trimmed;
+    readerBtn.disabled = !trimmed;
     clearSentenceBtn.disabled = !trimmed && !docWords.length;
     exportSentenceBtn.disabled = !trimmed && !savedSentences.length;
 
@@ -3114,7 +3206,7 @@ function init() {
 
     if (!span) return;
 
-    const gap = document.createTextNode("\u200b");
+    const gap = document.createTextNode("​");
     if (atEnd) span.after(gap);
     else span.before(gap);
 
@@ -4080,6 +4172,25 @@ function init() {
     return spans;
   };
 
+  const trimSpans = spans => {
+    const parts = spans.map(sp => ({ ...sp, s: sp.start, e: sp.end }));
+    const blank = ch => /[\s​]/.test(ch);
+
+    for (const sp of parts) {
+      const text = sp.node.nodeValue;
+      while (sp.s < sp.e && blank(text[sp.s])) sp.s++;
+      if (sp.e > sp.s) break;
+    }
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const sp = parts[i];
+      const text = sp.node.nodeValue;
+      while (sp.e > sp.s && blank(text[sp.e - 1])) sp.e--;
+      if (sp.e > sp.s) break;
+    }
+
+    return parts;
+  };
+
   const changeCase = mode => {
     const sel = window.getSelection();
 
@@ -4124,7 +4235,7 @@ function init() {
       text: group.nodes
         .map(node => node.textContent)
         .join("")
-        .replace(/\u200b/g, "")
+        .replace(/​/g, "")
         .replace(/\s+/g, " ")
         .trim()
     }));
@@ -4190,22 +4301,7 @@ function init() {
       return;
     }
 
-    const parts = spans.map(sp => ({ ...sp, s: sp.start, e: sp.end }));
-    const blank = ch => /[\s\u200b]/.test(ch);
-
-    for (const sp of parts) {
-      const text = sp.node.nodeValue;
-      while (sp.s < sp.e && blank(text[sp.s])) sp.s++;
-      if (sp.e > sp.s) break;
-    }
-    for (let i = parts.length - 1; i >= 0; i--) {
-      const sp = parts[i];
-      const text = sp.node.nodeValue;
-      while (sp.e > sp.s && blank(text[sp.e - 1])) sp.e--;
-      if (sp.e > sp.s) break;
-    }
-
-    const targets = parts.filter(sp => sp.e > sp.s);
+    const targets = trimSpans(spans).filter(sp => sp.e > sp.s);
     if (!targets.length) {
       showToast("Vùng bôi đen không có chữ để chú giải");
       return;
@@ -4239,13 +4335,7 @@ function init() {
     closeModal();
     node.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
     caretIn(node, false);
-
-    if (!reduceMotion) {
-      node.animate(
-        [{ background: "color-mix(in srgb, var(--hl) 40%, transparent)" }, { background: "transparent" }],
-        { duration: 900, easing: "ease-out" }
-      );
-    }
+    flashNode(node, 40);
   };
 
   const renderNotesBody = body => {
@@ -4398,7 +4488,7 @@ function init() {
 
       const color = nodeColor(node);
       const format = nodeFormat(node);
-      const text = node.nodeValue.slice(start, end).replace(/\u00a0/g, " ").replace(/\u200b/g, "");
+      const text = node.nodeValue.slice(start, end).replace(/ /g, " ").replace(/​/g, "");
 
       for (const ch of text) {
         if (/\s/.test(ch)) {
@@ -4431,20 +4521,7 @@ function init() {
 
     if (merged) {
       const word = docWords.find(w => w.id === ids[0]);
-      const spans = selectedTextSpans(sel.getRangeAt(0)).map(sp => ({ ...sp, s: sp.start, e: sp.end }));
-      const blank = ch => /[\s\u200b]/.test(ch);
-
-      for (const sp of spans) {
-        const text = sp.node.nodeValue;
-        while (sp.s < sp.e && blank(text[sp.s])) sp.s++;
-        if (sp.e > sp.s) break;
-      }
-      for (let i = spans.length - 1; i >= 0; i--) {
-        const sp = spans[i];
-        const text = sp.node.nodeValue;
-        while (sp.e > sp.s && blank(text[sp.e - 1])) sp.e--;
-        if (sp.e > sp.s) break;
-      }
+      const spans = trimSpans(selectedTextSpans(sel.getRangeAt(0)));
 
       if (word) {
         spans.forEach(sp => {
@@ -4479,7 +4556,7 @@ function init() {
       for (let i = start; i < end; i++) {
         const ch = text[i];
 
-        if (ch === "\u200b") continue;
+        if (ch === "​") continue;
 
         if (/\s/.test(ch)) {
           close(i);

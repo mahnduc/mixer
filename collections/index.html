@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>Bộ sưu tập</title>
-  <meta name="description" content="Danh sách các tệp JSON nén của Mixer.">
+  <meta name="description" content="Danh sách tệp local và tệp JSON nén (.gz) công khai của Mixer.">
   <meta name="theme-color" content="#f6f3ee" id="themeColor">
   <link rel="icon" type="image/svg+xml" href="https://api.iconify.design/boxicons/dino.svg?color=%23b8573a">
 
@@ -123,7 +123,7 @@
     .tools {
       display: flex;
       gap: .5rem;
-      margin-bottom: 1rem;
+      margin-bottom: 1.25rem;
     }
 
     .tools input,
@@ -146,6 +146,34 @@
       border-color: var(--accent, #2563eb);
     }
 
+    .sec {
+      margin-bottom: 1.75rem;
+    }
+
+    .sec-head {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      margin: 0 0 .6rem;
+      font-size: .8rem;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--muted, #7a736c);
+    }
+
+    .sec-head iconify-icon {
+      width: 1rem;
+      height: 1rem;
+    }
+
+    .sec-head .n {
+      margin-left: auto;
+      font-weight: 600;
+      letter-spacing: 0;
+      text-transform: none;
+    }
+
     .list {
       list-style: none;
       margin: 0;
@@ -158,24 +186,32 @@
     .item {
       display: flex;
       align-items: center;
-      gap: .85rem;
-      padding: .8rem 1rem;
+      gap: .35rem;
+      padding-right: .5rem;
       border-radius: 1rem;
       border: 1px solid color-mix(in srgb, var(--text, #2a2623) 12%, transparent);
       background: color-mix(in srgb, var(--bg, #f6f3ee) 93%, var(--text, #2a2623) 4%);
-      transition: border-color .15s ease, background-color .15s ease, transform .1s ease;
+      transition: border-color .15s ease, background-color .15s ease;
     }
 
-    .item:hover {
+    .item:hover,
+    .item:focus-within {
       border-color: color-mix(in srgb, var(--accent, #2563eb) 55%, transparent);
       background: color-mix(in srgb, var(--accent, #2563eb) 8%, var(--bg, #f6f3ee));
     }
 
-    .item:active {
-      transform: scale(.99);
+    .main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: .85rem;
+      padding: .8rem 0 .8rem 1rem;
+      border-radius: 1rem;
     }
 
-    .item:focus-visible {
+    .main:focus-visible,
+    .act:focus-visible {
       outline: 2px solid var(--accent, #2563eb);
       outline-offset: 2px;
     }
@@ -189,6 +225,11 @@
       border-radius: .8rem;
       background: color-mix(in srgb, var(--con, #b8573a) 14%, transparent);
       color: var(--con, #b8573a);
+    }
+
+    .ico.local {
+      background: color-mix(in srgb, var(--vow, #3a7bd5) 14%, transparent);
+      color: var(--vow, #3a7bd5);
     }
 
     .ico iconify-icon {
@@ -214,13 +255,53 @@
       font-size: .8rem;
     }
 
-    .go {
+    .tag {
+      display: inline-block;
+      margin-right: .35rem;
+      padding: 0 .4rem;
+      border-radius: .35rem;
+      background: color-mix(in srgb, var(--text, #2a2623) 10%, transparent);
+      font-size: .72rem;
+      font-weight: 600;
+    }
+
+    .acts {
       flex: none;
+      display: flex;
+      align-items: center;
+      gap: .1rem;
+    }
+
+    .act {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.25rem;
+      height: 2.25rem;
+      border: 0;
+      border-radius: 50%;
+      background: none;
       color: var(--muted, #7a736c);
+      cursor: pointer;
+    }
+
+    .act:hover {
+      background: color-mix(in srgb, var(--text, #2a2623) 12%, transparent);
+      color: var(--text, #2a2623);
+    }
+
+    .act[aria-busy="true"] {
+      opacity: .5;
+      pointer-events: none;
+    }
+
+    .act iconify-icon {
+      width: 1.25rem;
+      height: 1.25rem;
     }
 
     .state {
-      padding: 2rem 1rem;
+      padding: 1.5rem 1rem;
       text-align: center;
       color: var(--muted, #7a736c);
       font-size: .92rem;
@@ -267,18 +348,42 @@
       </select>
     </div>
 
-    <ul id="list" class="list"></ul>
-    <div id="state" class="state" hidden></div>
+    <section class="sec" aria-labelledby="hLocal">
+      <h2 class="sec-head" id="hLocal">
+        <iconify-icon icon="lucide:hard-drive"></iconify-icon><span>Tệp local (trên máy này)</span>
+        <span class="n" id="cntLocal">0</span>
+      </h2>
+      <ul id="listLocal" class="list"></ul>
+      <div id="stateLocal" class="state" hidden></div>
+    </section>
+
+    <section class="sec" aria-labelledby="hPublic">
+      <h2 class="sec-head" id="hPublic">
+        <iconify-icon icon="lucide:cloud"></iconify-icon><span>Tệp public (.gz)</span>
+        <span class="n" id="cntPublic">0</span>
+      </h2>
+      <ul id="listPublic" class="list"></ul>
+      <div id="statePublic" class="state" hidden></div>
+    </section>
   </div>
 
   <script src="./constants.js"></script>
   <script>
     (() => {
-      const CONFIG = Object.assign({ reader: "../reader/index.html", files: [] }, window.COLLECTION || {});
+      const CONFIG = Object.assign(
+        { reader: "../reader/index.html", editor: "../", editorKey: "mixer-app-state-v1", files: [] },
+        window.COLLECTION || {}
+      );
 
       const $ = id => document.getElementById(id);
       const EXT = /\.(json\.gz|json|gz|zip)$/i;
-      let items = [];
+      const MAX_PACKED = 5 * 1024 * 1024;
+      const MAX_UNPACKED = 12 * 1024 * 1024;
+      const MAX_SAVED = 50;
+      const MAX_NAME = 80;
+
+      let local = [];
+      let pub = [];
 
       (() => {
         const root = document.documentElement;
@@ -299,6 +404,23 @@
         paint();
       })();
 
+      const mk = (tag, cls, text) => {
+        const n = document.createElement(tag);
+        if (cls) n.className = cls;
+        if (text) n.textContent = text;
+        return n;
+      };
+      const icon = (name, cls) => {
+        const n = document.createElement("iconify-icon");
+        n.setAttribute("icon", name);
+        if (cls) n.className = cls;
+        return n;
+      };
+
+      const fmtSize = n => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(2)} MB`;
+      const fmtDate = d => d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
+      const hasBlocks = b => Array.isArray(b) && b.length > 0;
+
       function norm(x, base) {
         const o = typeof x === "string" ? { file: x } : x;
         const raw = o && (o.url || o.file || o.name);
@@ -317,104 +439,360 @@
         const rawDate = o.updated || o.date;
         const date = rawDate ? new Date(rawDate) : null;
         const size = Number(o.size);
+        const ext = EXT.exec(file);
 
         return {
+          kind: "public",
           title: String(o.title || file.replace(EXT, "") || abs.hostname),
           url: abs.href,
+          ext: ext ? "." + ext[1].toLowerCase() : "",
           size: Number.isFinite(size) && size > 0 ? size : null,
           date: date && !isNaN(date) ? date : null
         };
       }
 
-      const fmtSize = n => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(2)} MB`;
-      const fmtDate = d => d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
+      function readState() {
+        try {
+          const d = JSON.parse(localStorage.getItem(CONFIG.editorKey) || "null");
+          return d && typeof d === "object" && !Array.isArray(d) ? d : {};
+        } catch {
+          return {};
+        }
+      }
 
-      function readerHref(url) {
+      function writeState(state) {
+        try {
+          localStorage.setItem(CONFIG.editorKey, JSON.stringify(state));
+          return true;
+        } catch {
+          alert("Không thể ghi vào bộ nhớ trình duyệt để chuyển sang trình soạn thảo.");
+          return false;
+        }
+      }
+
+      function readLocal() {
+        const data = readState();
+        const out = [];
+
+        if (hasBlocks(data.sentenceBlocks)) {
+          out.push({
+            kind: "local",
+            id: `local:${CONFIG.editorKey}`,
+            draft: true,
+            title: "Bản nháp đang soạn",
+            count: data.sentenceBlocks.length
+          });
+        }
+
+        (Array.isArray(data.savedSentences) ? data.savedSentences : []).forEach((s, i) => {
+          if (!s || !hasBlocks(s.blocks)) return;
+          out.push({
+            kind: "local",
+            id: `local:${CONFIG.editorKey}#${i}`,
+            savedId: typeof s.id === "string" ? s.id : null,
+            draft: false,
+            title: typeof s.name === "string" && s.name.trim() ? s.name.trim() : `Tệp ${i + 1}`,
+            count: s.blocks.length
+          });
+        });
+
+        return out;
+      }
+
+      function readerHref(it) {
         const u = new URL(CONFIG.reader, location.href);
-        u.searchParams.set("src", url);
+        if (it.kind === "local") u.searchParams.set("doc", it.id);
+        else u.searchParams.set("src", it.url);
         return u.href;
       }
 
-      function showState(html, err) {
-        const box = $("state");
+      const goEditor = () => { location.href = new URL(CONFIG.editor, location.href).href; };
+
+      async function inflate(u8, format) {
+        if (typeof DecompressionStream !== "function") throw new Error("nodecomp");
+        const reader = new Blob([u8]).stream().pipeThrough(new DecompressionStream(format)).getReader();
+        const chunks = [];
+        let total = 0;
+        for (; ;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          total += value.length;
+          if (total > MAX_UNPACKED) { reader.cancel(); throw new Error("size"); }
+          chunks.push(value);
+        }
+        const out = new Uint8Array(total);
+        let o = 0;
+        chunks.forEach(c => { out.set(c, o); o += c.length; });
+        return out;
+      }
+
+      async function unzip(u8) {
+        const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+        let end = -1;
+        for (let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--) {
+          if (dv.getUint32(i, true) === 0x06054b50) { end = i; break; }
+        }
+        if (end < 0) throw new Error("zip");
+
+        const count = dv.getUint16(end + 10, true);
+        let p = dv.getUint32(end + 16, true);
+        for (let n = 0; n < count; n++) {
+          if (p + 46 > u8.length || dv.getUint32(p, true) !== 0x02014b50) break;
+          const method = dv.getUint16(p + 10, true);
+          const csize = dv.getUint32(p + 20, true);
+          const nl = dv.getUint16(p + 28, true);
+          const xl = dv.getUint16(p + 30, true);
+          const cl = dv.getUint16(p + 32, true);
+          const lho = dv.getUint32(p + 42, true);
+          const name = new TextDecoder().decode(u8.subarray(p + 46, p + 46 + nl));
+          p += 46 + nl + xl + cl;
+
+          if (!/\.json$/i.test(name)) continue;
+          const start = lho + 30 + dv.getUint16(lho + 26, true) + dv.getUint16(lho + 28, true);
+          const data = u8.subarray(start, start + csize);
+          if (method === 0) return data;
+          if (method === 8) return inflate(data, "deflate-raw");
+          break;
+        }
+        throw new Error("zip");
+      }
+
+      async function bytesToJson(buf) {
+        let u8 = new Uint8Array(buf);
+        if (u8[0] === 0x1f && u8[1] === 0x8b) u8 = await inflate(u8, "gzip");
+        else if (u8[0] === 0x50 && u8[1] === 0x4b) u8 = await unzip(u8);
+        else {
+          const text = new TextDecoder().decode(u8).trim();
+          if (/^H4sI[A-Za-z0-9+/=\s]+$/.test(text)) {
+            const bin = atob(text.replace(/\s+/g, ""));
+            u8 = await inflate(Uint8Array.from(bin, c => c.charCodeAt(0)), "gzip");
+          } else {
+            return JSON.parse(text);
+          }
+        }
+        return JSON.parse(new TextDecoder().decode(u8));
+      }
+
+      function extractBlocks(data) {
+        if (!data || typeof data !== "object") return null;
+        if (Array.isArray(data)) return data;
+        if (Array.isArray(data.blocks)) return data.blocks;
+        if (Array.isArray(data.sentenceBlocks)) return data.sentenceBlocks;
+        if (Array.isArray(data.document?.blocks)) return data.document.blocks;
+        return null;
+      }
+
+      function pickDoc(data) {
+        const main = extractBlocks(data);
+        if (hasBlocks(main)) {
+          const w = data?.document?.words ?? data?.words;
+          return { blocks: main, words: Array.isArray(w) ? w : [] };
+        }
+        for (const s of Array.isArray(data?.savedSentences) ? data.savedSentences : []) {
+          const b = extractBlocks(s);
+          if (hasBlocks(b)) return { blocks: b, words: Array.isArray(s.words) ? s.words : [] };
+        }
+        return null;
+      }
+
+      const draftWouldBeLost = state => !state.currentSavedId && hasBlocks(state.sentenceBlocks);
+      const DRAFT_MSG = "Bản nháp đang soạn chưa được lưu thành tệp và sẽ bị thay thế. Tiếp tục?";
+
+      function openLocalInEditor(it) {
+        if (it.draft) { goEditor(); return; }
+
+        const state = readState();
+        const entry = (Array.isArray(state.savedSentences) ? state.savedSentences : [])
+          .find(s => s && s.id === it.savedId);
+        if (!entry || !hasBlocks(entry.blocks)) {
+          alert("Không tìm thấy tệp này trong bộ nhớ trình duyệt.");
+          local = readLocal();
+          render();
+          return;
+        }
+
+        if (draftWouldBeLost(state) && !confirm(DRAFT_MSG)) return;
+
+        state.sentenceBlocks = entry.blocks;
+        state.docWords = Array.isArray(entry.words) ? entry.words : [];
+        state.currentSavedId = entry.id;
+
+        if (writeState(state)) goEditor();
+      }
+
+      async function openPublicInEditor(it, btn) {
+        if (btn.getAttribute("aria-busy") === "true") return;
+        btn.setAttribute("aria-busy", "true");
+
+        try {
+          const res = await fetch(it.url, { credentials: "omit", cache: "no-store" });
+          if (!res.ok) throw new Error("http");
+          if (Number(res.headers.get("content-length")) > MAX_PACKED) throw new Error("size");
+          const buf = await res.arrayBuffer();
+          if (buf.byteLength > MAX_PACKED) throw new Error("size");
+
+          const data = await bytesToJson(buf);
+          const doc = pickDoc(data);
+          if (!doc) throw new Error("empty");
+
+          const state = readState();
+          if (draftWouldBeLost(state) && !confirm(DRAFT_MSG)) return;
+
+          const saved = Array.isArray(state.savedSentences) ? state.savedSentences : [];
+          const used = new Set(saved.map(s => String(s?.name || "").toLowerCase()));
+          const base = it.title.replace(/\s+/g, " ").trim().slice(0, MAX_NAME) || "Tệp";
+          let name = base;
+          for (let n = 2; used.has(name.toLowerCase()); n++) name = `${base} (${n})`;
+
+          let id = null;
+          if (saved.length < MAX_SAVED) {
+            id = crypto.randomUUID();
+            saved.unshift({ id, name, blocks: doc.blocks, words: doc.words });
+          }
+
+          state.savedSentences = saved;
+          state.sentenceBlocks = doc.blocks;
+          state.docWords = doc.words;
+          state.currentSavedId = id;
+
+          if (data && typeof data === "object" && !Array.isArray(data)) {
+            if (data.docStyle && typeof data.docStyle === "object" && !Array.isArray(data.docStyle)) {
+              state.docStyle = data.docStyle;
+            }
+            if (Number.isFinite(Number(data.docSize))) state.docSize = Number(data.docSize);
+            if (typeof data.docFont === "string") state.docFont = data.docFont;
+            if (data.colorLegend && typeof data.colorLegend === "object" && !Array.isArray(data.colorLegend)) {
+              state.colorLegend = { ...(state.colorLegend || {}), ...data.colorLegend };
+            }
+          }
+
+          if (writeState(state)) goEditor();
+        } catch (err) {
+          const msg = {
+            size: "Tệp quá lớn.",
+            empty: "Tệp không có nội dung hợp lệ của trình soạn thảo.",
+            nodecomp: "Trình duyệt này không hỗ trợ giải nén .gz."
+          }[err?.message] || "Không tải được tệp. Kiểm tra đường dẫn, CORS của máy chủ hoặc định dạng JSON nén.";
+          alert(msg);
+        } finally {
+          btn.removeAttribute("aria-busy");
+        }
+      }
+
+      function showState(box, content, err) {
         box.replaceChildren();
-        if (typeof html === "string") box.textContent = html;
-        else box.append(...html);
+        if (typeof content === "string") box.textContent = content;
+        else box.append(...content);
         box.dataset.err = err ? "1" : "";
         box.hidden = false;
+      }
+
+      function buildItem(it) {
+        const li = mk("li", "item");
+        const href = readerHref(it);
+
+        const main = mk("a", "main");
+        main.href = href;
+        main.title = "Mở trong trang đọc";
+
+        const ico = mk("span", it.kind === "local" ? "ico local" : "ico");
+        ico.append(icon(it.kind === "local" ? "lucide:file-text" : "lucide:file-archive"));
+
+        const body = mk("span", "body");
+        const name = mk("div", "name", it.title);
+        name.title = it.title;
+        const meta = mk("div", "meta");
+        const tag = mk("span", "tag", it.kind === "local" ? (it.draft ? "Bản nháp" : "Local") : (it.ext || "JSON"));
+        const detail = it.kind === "local"
+          ? `${it.count} đoạn`
+          : [it.size ? fmtSize(it.size) : "", it.date ? fmtDate(it.date) : ""].filter(Boolean).join(" · ");
+        meta.append(tag, detail);
+        body.append(name, meta);
+        main.append(ico, body);
+
+        const readBtn = mk("a", "act");
+        readBtn.href = href;
+        readBtn.title = "Mở trong reader";
+        readBtn.setAttribute("aria-label", `Mở “${it.title}” trong reader`);
+        readBtn.append(icon("lucide:book-open"));
+
+        const editBtn = mk("button", "act");
+        editBtn.type = "button";
+        editBtn.title = "Chỉnh sửa trong trình soạn thảo";
+        editBtn.setAttribute("aria-label", `Chỉnh sửa “${it.title}” trong trình soạn thảo`);
+        editBtn.append(icon("lucide:pencil-line"));
+        editBtn.addEventListener("click", () => {
+          if (it.kind === "local") openLocalInEditor(it);
+          else openPublicInEditor(it, editBtn);
+        });
+
+        const acts = mk("span", "acts");
+        acts.append(readBtn, editBtn);
+
+        li.append(main, acts);
+        return li;
+      }
+
+      function renderSection(ul, box, countEl, all, shown, emptyContent) {
+        ul.replaceChildren();
+        countEl.textContent = shown.length === all.length ? String(all.length) : `${shown.length}/${all.length}`;
+
+        if (!all.length) {
+          showState(box, emptyContent);
+          return;
+        }
+        if (!shown.length) {
+          showState(box, "Không có tệp nào khớp với tìm kiếm.");
+          return;
+        }
+
+        box.hidden = true;
+        shown.forEach(it => ul.append(buildItem(it)));
       }
 
       function render() {
         const q = $("q").value.trim().toLowerCase();
         const mode = $("sort").value;
 
-        const list = items.filter(it => !q || it.title.toLowerCase().includes(q));
-        if (mode === "name") list.sort((a, b) => a.title.localeCompare(b.title, "vi"));
-        else if (mode === "date") list.sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0));
+        const view = arr => {
+          const list = arr.filter(it => !q || it.title.toLowerCase().includes(q));
+          if (mode === "name") list.sort((a, b) => a.title.localeCompare(b.title, "vi"));
+          else if (mode === "date") list.sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0));
+          return list;
+        };
 
-        const ul = $("list");
-        ul.replaceChildren();
-        $("state").hidden = true;
-        $("count").textContent = q ? `${list.length}/${items.length} tệp` : `${items.length} tệp`;
+        const code = mk("code", "", "files: [\"ten-file.json.gz\"]");
+        const publicHint = [
+          document.createTextNode("Mở "),
+          Object.assign(mk("b"), { textContent: "constants.js" }),
+          document.createTextNode(" và thêm tên tệp .gz vào danh sách:"),
+          mk("br"),
+          code
+        ];
 
-        if (!list.length) {
-          showState(items.length ? "Không có tệp nào khớp với tìm kiếm." : "Chưa có tệp nào trong bộ sưu tập.");
-          return;
-        }
+        renderSection(
+          $("listLocal"), $("stateLocal"), $("cntLocal"), local, view(local),
+          "Chưa có tệp local. Lưu tệp trong trình soạn thảo để hiện ở đây."
+        );
+        renderSection($("listPublic"), $("statePublic"), $("cntPublic"), pub, view(pub), publicHint);
 
-        list.forEach(it => {
-          const li = document.createElement("li");
-          const a = document.createElement("a");
-          a.className = "item";
-          a.href = readerHref(it.url);
-
-          const ico = document.createElement("span");
-          ico.className = "ico";
-          const icon = document.createElement("iconify-icon");
-          icon.setAttribute("icon", "lucide:file-archive");
-          ico.append(icon);
-
-          const body = document.createElement("span");
-          body.className = "body";
-          const name = document.createElement("div");
-          name.className = "name";
-          name.textContent = it.title;
-          name.title = it.title;
-          const meta = document.createElement("div");
-          meta.className = "meta";
-          meta.textContent = [it.size ? fmtSize(it.size) : "", it.date ? fmtDate(it.date) : ""].filter(Boolean).join(" · ") || "JSON nén";
-          body.append(name, meta);
-
-          const go = document.createElement("iconify-icon");
-          go.className = "go";
-          go.setAttribute("icon", "lucide:chevron-right");
-
-          a.append(ico, body, go);
-          li.append(a);
-          ul.append(li);
-        });
+        $("count").textContent = `${local.length} tệp local · ${pub.length} tệp public`;
       }
 
       $("q").addEventListener("input", render);
       $("sort").addEventListener("change", render);
 
-      const base = new URL("./", location.href);
-      items = (Array.isArray(CONFIG.files) ? CONFIG.files : []).map(x => norm(x, base)).filter(Boolean);
-
-      if (items.length) {
+      const refreshLocal = () => {
+        local = readLocal();
         render();
-      } else {
-        $("count").textContent = "Chưa có tệp nào";
-        const code = document.createElement("code");
-        code.textContent = "files: [\"ten-file.json.gz\"]";
-        showState([
-          document.createTextNode("Mở "),
-          Object.assign(document.createElement("b"), { textContent: "constants.js" }),
-          document.createTextNode(" và thêm tên tệp vào danh sách:"),
-          document.createElement("br"),
-          code
-        ]);
-      }
+      };
+      addEventListener("pageshow", e => { if (e.persisted) refreshLocal(); });
+      addEventListener("storage", e => { if (e.key === CONFIG.editorKey) refreshLocal(); });
+
+      const base = new URL("./", location.href);
+      pub = (Array.isArray(CONFIG.files) ? CONFIG.files : []).map(x => norm(x, base)).filter(Boolean);
+      local = readLocal();
+      render();
     })();
   </script>
 </body>
