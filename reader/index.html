@@ -25,6 +25,7 @@
   </script>
 
   <link rel="stylesheet" href="../theme.css">
+  <link rel="stylesheet" href="./reader.css">
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <script src="https://cdn.jsdelivr.net/npm/lucide@0.469.0/dist/umd/lucide.min.js"></script>
   <script src="https://code.iconify.design/iconify-icon/3.0.0/iconify-icon.min.js"></script>
@@ -43,1026 +44,111 @@
   </script>
 
   <style>
-    :root {
-      --accent: #2563eb;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root:not([data-theme="light"]) {
-        --accent: #6aa7ff;
-      }
-    }
-
-    :root[data-theme="dark"] {
-      --accent: #6aa7ff;
-    }
-
-    ::selection {
-      background: color-mix(in srgb, var(--accent) 32%, transparent);
-    }
-
-    [hidden] {
-      display: none !important;
-    }
-
-    #aboutPopup {
-      animation: aboutFadeIn .2s ease-out;
-    }
-
-    #aboutSheet {
-      animation: aboutScaleIn .25s cubic-bezier(.2, .8, .2, 1);
-    }
-
-    @keyframes aboutFadeIn {
-      from {
-        opacity: 0;
-      }
-
-      to {
-        opacity: 1;
-      }
-    }
-
-    @keyframes aboutScaleIn {
-      from {
-        opacity: 0;
-        transform: scale(.94) translateY(10px);
-      }
-
-      to {
-        opacity: 1;
-        transform: scale(1) translateY(0);
-      }
-    }
-
-    .about-dino-wrap {
-      position: relative;
-      display: flex;
-      flex: 0 0 42%;
-      min-width: 0;
-      min-height: 340px;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .about-dino-bg {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 280px;
-      height: 280px;
-      transform: translate(-50%, -50%);
-      background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 45%, #b8573a 100%);
-      -webkit-mask: url("https://api.iconify.design/boxicons/dino.svg") center/contain no-repeat;
-      mask: url("https://api.iconify.design/boxicons/dino.svg") center/contain no-repeat;
-      opacity: .28;
-      pointer-events: none;
-    }
-
-    .about-gradient {
-      position: absolute;
-      inset: 0;
-      z-index: 0;
-      background:
-        radial-gradient(circle at 25% 50%, color-mix(in srgb, var(--con) 15%, transparent), transparent 65%),
-        radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--vow) 12%, transparent), transparent 50%);
-      pointer-events: none;
-    }
-
-    #themeToggle {
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    #themeToggle iconify-icon {
-      color: var(--vow);
-      transition: transform .2s ease, color .2s ease;
-    }
-
-    #themeToggle:hover iconify-icon {
-      color: var(--con);
-      transform: scale(1.15);
-    }
-
-    #themeToggle:active iconify-icon {
-      transform: scale(.9);
-    }
-
-    @media(max-width:640px) {
-      .about-split {
-        flex-direction: column;
-      }
-
-      .about-dino-wrap {
-        flex: none;
-        width: 100%;
-        min-height: 150px;
-      }
-
-      .about-dino-bg {
-        width: 150px;
-        height: 150px;
-      }
-    }
-
-    @media(max-width:480px) {
-      #aboutSheet {
-        max-width: 100%;
-        min-height: 280px;
-      }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-
-      #aboutPopup,
-      #aboutSheet,
-      .doc .flash {
-        animation: none;
-      }
-
-      #themeToggle iconify-icon {
-        transition: none;
-      }
-    }
-
-    ::-webkit-scrollbar {
-      width: 10px;
-      height: 10px;
-    }
-
-    ::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    ::-webkit-scrollbar-thumb {
-      background: color-mix(in srgb, var(--text) 28%, transparent);
-      background-clip: content-box;
-      border: 2px solid transparent;
-      border-radius: 999px;
-    }
-
-    ::-webkit-scrollbar-thumb:hover {
-      background: color-mix(in srgb, var(--accent) 70%, transparent);
-      background-clip: content-box;
-    }
-
-    ::-webkit-scrollbar-corner {
-      background: transparent;
-    }
-
-    @supports not selector(::-webkit-scrollbar) {
-      * {
-        scrollbar-width: thin;
-        scrollbar-color: color-mix(in srgb, var(--text) 28%, transparent) transparent;
-      }
-    }
-
-    main {
-      max-width: 1440px;
-      width: 100%;
-      margin: 0 auto;
-      padding: 0 1.25rem 4rem;
-    }
-
-    .workspace {
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-      align-items: stretch;
-    }
-
-    .doc-column {
-      flex: 1 1 auto;
-      min-width: 0;
-      max-width: 860px;
-      width: 100%;
-      margin: 0 auto;
-      padding-top: .5rem;
-    }
-
-    .btn {
-      height: 2.25rem;
-      padding: 0 .9rem;
-      border: 1px solid color-mix(in srgb, var(--text) 16%, transparent);
-      border-radius: 999px;
-      background: color-mix(in srgb, var(--bg) 88%, transparent);
-      color: var(--text);
-      font: 600 .875rem system-ui, sans-serif;
+    #selBtn[hidden] { display: none; }
+    #selBtn {
+      position: fixed;
+      z-index: 60;
       display: inline-flex;
       align-items: center;
-      gap: .4rem;
-      cursor: pointer;
-      max-width: 100%;
-    }
-
-    .btn:hover {
-      background: color-mix(in srgb, var(--text) 12%, transparent);
-    }
-
-    .btn[aria-pressed="true"] {
-      border-color: color-mix(in srgb, var(--accent) 55%, transparent);
-      background: color-mix(in srgb, var(--accent) 14%, transparent);
-    }
-
-    #aboutHint {
-      margin-top: 1rem;
-      padding: 1.5rem 1rem;
-      text-align: center;
-      color: var(--muted);
-      border: 2px dashed color-mix(in srgb, var(--text) 18%, transparent);
-      border-radius: 1rem;
-      font-size: .9rem;
-      transition: border-color .15s ease, background-color .15s ease, color .15s ease;
-    }
-
-    #aboutSheet.over #aboutHint {
-      border-color: var(--accent);
-      background: color-mix(in srgb, var(--accent) 8%, transparent);
-      color: var(--text);
-    }
-
-    .rail {
-      order: -2;
-      position: sticky;
-      top: 0;
-      z-index: 30;
-      display: flex;
-      flex-direction: column;
-      gap: .5rem;
-      margin: 0 -1.25rem;
-      padding: max(.75rem, env(safe-area-inset-top)) 1.25rem .5rem;
-      background: color-mix(in srgb, var(--bg) 88%, transparent);
-      -webkit-backdrop-filter: blur(12px);
-      backdrop-filter: blur(12px);
-    }
-
-    .rail-brand {
-      display: flex;
-      align-items: center;
-      min-height: 2.5rem;
-    }
-
-    .panel {
-      border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
-      border-radius: 1.1rem;
-      background: color-mix(in srgb, var(--bg) 93%, var(--text) 4%);
-      padding: .6rem;
-      text-align: left;
-    }
-
-    .panel-head {
-      display: flex;
-      align-items: center;
-      gap: .5rem;
-      padding: .3rem .5rem .45rem;
-      font-size: .85rem;
-      font-weight: 700;
-      color: var(--muted);
-    }
-
-    .panel-head iconify-icon {
-      flex: none;
-      width: 1rem;
-      height: 1rem;
-    }
-
-    .count {
-      margin-left: auto;
-      min-width: 1.4rem;
-      padding: 0 .4rem;
-      border-radius: 999px;
-      background: color-mix(in srgb, var(--text) 9%, transparent);
-      font-size: .72rem;
-      font-weight: 700;
-      line-height: 1.4rem;
-      text-align: center;
-    }
-
-    .marks {
-      padding: 0;
+      gap: .375rem;
+      padding: .45rem .8rem;
       border: 0;
-      background: none;
-    }
-
-    .marks .panel-head {
-      display: none;
-    }
-
-    .marks .panel-head iconify-icon {
-      color: var(--accent);
-    }
-
-    .marks-list {
-      list-style: none;
-      margin: 0;
-      padding: 0 0 .25rem;
-      display: flex;
-      gap: .4rem;
-      overflow-x: auto;
-      scrollbar-width: none;
-    }
-
-    .marks-list::-webkit-scrollbar {
-      display: none;
-    }
-
-    .mark-row {
-      display: flex;
-      align-items: center;
-      flex: 0 0 auto;
-      max-width: 70vw;
-      border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
-      border-radius: 999px;
-    }
-
-    .mark-link {
-      display: flex;
-      align-items: center;
-      gap: .45rem;
-      flex: 1;
-      min-width: 0;
-      padding: .35rem .3rem .35rem .75rem;
-      border: 0;
-      background: none;
-      color: var(--text);
-      font-size: .875rem;
-      text-align: left;
-      cursor: pointer;
-    }
-
-    .mark-link iconify-icon {
-      flex: none;
-      color: var(--accent);
-    }
-
-    .mark-link span {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .mark-row.active {
-      border-color: color-mix(in srgb, var(--accent) 50%, transparent);
-      background: color-mix(in srgb, var(--accent) 13%, transparent);
-    }
-
-    .mark-row.active .mark-link {
-      color: var(--accent);
-      font-weight: 600;
-    }
-
-    .mark-remove {
-      display: flex;
-      flex: none;
-      align-items: center;
-      justify-content: center;
-      width: 1.9rem;
-      height: 1.9rem;
-      border: 0;
-      border-radius: 50%;
-      background: none;
-      color: var(--muted);
-      cursor: pointer;
-    }
-
-    .mark-remove:hover {
-      color: var(--text);
-      background: color-mix(in srgb, var(--text) 10%, transparent);
-    }
-
-    .toc {
-      order: -1;
-      padding: .35rem .5rem .6rem;
-      text-align: left;
-    }
-
-    .toc-fold {
-      display: flex;
-      align-items: center;
-      gap: .5rem;
-      width: 100%;
-      padding: .35rem .4rem;
-      border: 0;
-      border-radius: .6rem;
-      background: none;
-      color: var(--muted);
-      font-size: .85rem;
-      font-weight: 700;
-      cursor: pointer;
-    }
-
-    .toc-fold iconify-icon {
-      flex: none;
-      width: 1rem;
-      height: 1rem;
-    }
-
-    .toc-chevron {
-      transition: transform .2s ease;
-    }
-
-    .toc.folded .toc-chevron {
-      transform: rotate(-90deg);
-    }
-
-    .toc.folded .toc-list {
-      display: none;
-    }
-
-    .toc-list {
-      list-style: none;
-      margin: .3rem 0 0 .65rem;
-      padding: 0 0 0 .6rem;
-      border-left: 2px solid color-mix(in srgb, var(--text) 12%, transparent);
-      display: flex;
-      flex-direction: column;
-      gap: .1rem;
-    }
-
-    .toc-item {
-      position: relative;
-    }
-
-    .toc-item.active::before {
-      content: "";
-      position: absolute;
-      left: calc(-.6rem - 2px);
-      top: .25rem;
-      bottom: .25rem;
-      width: 2px;
-      border-radius: 2px;
-      background: var(--accent);
-    }
-
-    .toc-link {
-      display: block;
-      padding: .3rem .55rem;
-      border-radius: .55rem;
-      font-size: .85rem;
-      line-height: 1.4;
-      color: var(--muted);
-      text-decoration: none;
-      overflow-wrap: anywhere;
-      transition: background-color .15s ease, color .15s ease;
-    }
-
-    .toc-item[data-level="1"] .toc-link {
-      color: var(--text);
-      font-weight: 600;
-    }
-
-    .toc-item[data-level="2"] .toc-link {
-      padding-left: 1.1rem;
-    }
-
-    .toc-item[data-level="3"] .toc-link {
-      padding-left: 1.65rem;
-      font-size: .82rem;
-    }
-
-    .toc-item[data-level="4"] .toc-link {
-      padding-left: 2.2rem;
-      font-size: .8rem;
-    }
-
-    .toc-link:hover {
-      background: color-mix(in srgb, var(--text) 8%, transparent);
-      color: var(--text);
-    }
-
-    .toc-item.active .toc-link {
-      background: color-mix(in srgb, var(--accent) 11%, transparent);
-      color: var(--accent);
-      font-weight: 600;
-    }
-
-    @media (min-width: 1024px) {
-      main {
-        padding-top: 1.5rem;
-      }
-
-      .workspace {
-        display: grid;
-        grid-template-columns: 15rem minmax(0, 1fr) 15rem;
-        align-items: start;
-        gap: 1.75rem;
-      }
-
-      .doc-column {
-        grid-column: 2;
-        grid-row: 1;
-        max-width: none;
-        margin: 0;
-        padding-top: 0;
-      }
-
-      .rail,
-      .toc {
-        position: sticky;
-        top: calc(1.25rem + env(safe-area-inset-top));
-        width: 15rem;
-        flex: 0 0 15rem;
-        max-height: calc(100svh - 2.5rem - env(safe-area-inset-top));
-        overflow-y: auto;
-        overscroll-behavior: contain;
-      }
-
-      .rail {
-        grid-column: 1;
-        grid-row: 1;
-        order: 0;
-        z-index: auto;
-        margin: 0;
-        padding: 0;
-        gap: .9rem;
-        background: none;
-        -webkit-backdrop-filter: none;
-        backdrop-filter: none;
-      }
-
-      .toc {
-        grid-column: 3;
-        grid-row: 1;
-        order: 2;
-        padding: .6rem;
-      }
-
-      .marks {
-        padding: .6rem;
-        border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
-        background: color-mix(in srgb, var(--bg) 93%, var(--text) 4%);
-      }
-
-      .marks .panel-head {
-        display: flex;
-      }
-
-      .marks-list {
-        flex-direction: column;
-        gap: .15rem;
-        overflow: visible;
-        padding: 0;
-      }
-
-      .mark-row {
-        max-width: none;
-        border: 0;
-        border-radius: .65rem;
-      }
-
-      .mark-row:hover {
-        background: color-mix(in srgb, var(--text) 7%, transparent);
-      }
-
-      .mark-row.active {
-        background: color-mix(in srgb, var(--accent) 13%, transparent);
-      }
-
-      .mark-link {
-        padding-left: .6rem;
-      }
-
-      .toc-fold {
-        pointer-events: none;
-        cursor: default;
-      }
-
-      .toc-chevron {
-        display: none;
-      }
-
-      .toc.folded .toc-list {
-        display: flex;
-      }
-    }
-
-    .file-list-wrap {
-      margin-top: .9rem;
-    }
-
-    .file-list-title {
-      display: flex;
-      align-items: center;
-      gap: .4rem;
-      padding: 0 .25rem .35rem;
-      color: var(--muted);
-      font-size: .8rem;
-      font-weight: 700;
-    }
-
-    .file-list {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-      max-height: 11.5rem;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: .15rem;
-    }
-
-    .file-item {
-      display: flex;
-      align-items: center;
-      border-radius: .75rem;
-    }
-
-    .file-item:hover {
-      background: color-mix(in srgb, var(--text) 7%, transparent);
-    }
-
-    .file-item.active {
-      background: color-mix(in srgb, var(--accent) 12%, transparent);
-    }
-
-    .file-open {
-      flex: 1;
-      min-width: 0;
-      padding: .5rem .65rem;
-      border: 0;
-      background: none;
-      color: var(--text);
-      font-size: .875rem;
-      text-align: left;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      cursor: pointer;
-    }
-
-    .file-item.active .file-open {
-      color: var(--accent);
-      font-weight: 600;
-    }
-
-    .mark-btn {
-      display: flex;
-      flex: none;
-      align-items: center;
-      justify-content: center;
-      width: 2.1rem;
-      height: 2.1rem;
-      border: 0;
-      border-radius: 50%;
-      background: none;
-      color: var(--muted);
-      cursor: pointer;
-      transition: color .15s ease, transform .15s ease;
-    }
-
-    .mark-btn:hover {
-      color: var(--accent);
-      transform: scale(1.12);
-    }
-
-    .mark-btn[aria-pressed="true"] {
-      color: var(--accent);
-    }
-
-    .mark-btn iconify-icon {
-      width: 1.15rem;
-      height: 1.15rem;
-    }
-
-    .doc {
-      font-size: var(--doc-size, 18px);
-      font-family: var(--doc-font, Arial, Helvetica, sans-serif);
-      line-height: 1.6;
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-      text-align: left;
-    }
-
-    .doc p,
-    .doc h1,
-    .doc h2,
-    .doc h3,
-    .doc h4 {
-      margin: 0;
-    }
-
-    .doc h1,
-    .doc h2,
-    .doc h3,
-    .doc h4 {
-      scroll-margin-top: 6rem;
-    }
-
-    @media (min-width: 1024px) {
-
-      .doc h1,
-      .doc h2,
-      .doc h3,
-      .doc h4 {
-        scroll-margin-top: 1.5rem;
-      }
-    }
-
-    .doc p.e::before {
-      content: "\200b";
-    }
-
-    .doc h1 {
-      font-size: 2.25rem;
-      line-height: 1.2;
-      margin: .4em 0 .2em;
-    }
-
-    .doc h2 {
-      font-size: 1.875rem;
-      line-height: 1.25;
-      margin: .4em 0 .2em;
-    }
-
-    .doc h3 {
-      font-size: 1.5rem;
-      line-height: 1.3;
-      margin: .35em 0 .15em;
-    }
-
-    .doc h4 {
-      font-size: 1.25rem;
-      line-height: 1.35;
-      margin: .3em 0 .1em;
-    }
-
-    .doc ul {
-      list-style: disc;
-      padding-left: 1.75rem;
-      margin: .25em 0;
-    }
-
-    .doc ol {
-      list-style: decimal;
-      padding-left: 1.75rem;
-      margin: .25em 0;
-    }
-
-    .doc li.c,
-    .doc li.r {
-      list-style-position: inside;
-    }
-
-    .doc [data-indent] {
-      text-indent: 2em;
-    }
-
-    .doc [data-kind=quote] {
-      text-align: center;
-      font-style: italic;
-      font-size: 1.15em;
-      margin: .6em 1.5rem .2em;
-    }
-
-    .doc [data-kind=cite] {
-      text-align: right;
-      font-size: .9em;
-      opacity: .75;
-      margin: 0 1.5rem .6em;
-    }
-
-    .doc [data-kind=cite]::before {
-      content: "— ";
-    }
-
-    .doc [data-kind=cite]::after {
-      content: " —";
-    }
-
-    .doc table {
-      width: 100%;
-      table-layout: fixed;
-      border-collapse: collapse;
-      margin: .5em 0;
-      white-space: pre-wrap;
-    }
-
-    .doc td {
-      border: 1px solid color-mix(in srgb, var(--text) 30%, transparent);
-      padding: .35em .5em;
-      vertical-align: top;
-      overflow-wrap: anywhere;
-    }
-
-    .doc table.h tr:first-child td {
-      font-weight: 700;
-      background: color-mix(in srgb, var(--text) 8%, transparent);
-    }
-
-    .doc figure {
-      margin: .5em 0;
-    }
-
-    .wrap {
-      position: relative;
-      display: inline-block;
-      max-width: 100%;
-      vertical-align: top;
-    }
-
-    .wrap img {
-      display: block;
-      width: 100%;
-      height: auto;
-    }
-
-    .mask {
-      position: absolute;
-      inset: 0;
-      -webkit-mask: no-repeat center/contain;
-      mask: no-repeat center/contain;
-    }
-
-    .doc {
-      padding-left: 2.25rem;
-    }
-
-    .doc li {
-      --ml: 1.75rem;
-    }
-
-    .doc [data-kind] {
-      --ml: 1.5rem;
-    }
-
-    .doc [data-kind=poem],
-    .doc [data-kind=dropcap] {
-      --ml: 0px;
-    }
-
-    .mk-host {
-      position: relative;
-    }
-
-    .mk {
-      position: absolute;
-      left: calc(-2.25rem - var(--ml, 0px));
-      top: .1rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 1.75rem;
-      height: 1.75rem;
-      padding: 0;
-      border: 0;
-      border-radius: .5rem;
-      background: none;
-      color: var(--muted);
-      opacity: .4;
+      border-radius: 9999px;
+      background: var(--text);
+      color: var(--bg);
+      font-weight: 600; font-size: 13px; line-height: 1; font-family: inherit;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, .3);
       cursor: pointer;
       user-select: none;
       -webkit-user-select: none;
-      font-size: 16px;
-      line-height: 1;
-      text-indent: 0;
-      transition: opacity .15s ease, color .15s ease, background-color .15s ease;
     }
+    #selBtn:active { transform: scale(.95); }
 
-    .mk iconify-icon {
-      width: 1.2rem;
-      height: 1.2rem;
-    }
-
-    @media (hover: hover) {
-      .mk {
-        opacity: 0;
-      }
-
-      .mk-host:hover>.mk,
-      .mk:focus-visible {
-        opacity: 1;
-      }
-    }
-
-    .mk:hover {
-      color: var(--accent);
-      background: color-mix(in srgb, var(--accent) 12%, transparent);
-    }
-
-    .mk[aria-pressed="true"] {
-      opacity: 1;
-      color: var(--accent);
-    }
-
-    .doc [data-marked] {
-      border-radius: .3rem;
-      background: color-mix(in srgb, var(--accent) 9%, transparent);
-      box-shadow: 0 0 0 .2rem color-mix(in srgb, var(--accent) 9%, transparent);
-    }
-
-    .doc .flash {
-      animation: spotFlash 1.1s ease-out;
-    }
-
-    @keyframes spotFlash {
-      from {
-        background: color-mix(in srgb, var(--accent) 38%, transparent);
-        box-shadow: 0 0 0 .2rem color-mix(in srgb, var(--accent) 38%, transparent);
-      }
-    }
-
-    .legend {
-      display: flex;
-      flex-wrap: wrap;
-      gap: .25rem 1rem;
-      margin-top: 1.5rem;
-      padding-top: .75rem;
-      border-top: 1px solid color-mix(in srgb, var(--text) 15%, transparent);
-      font-size: .875rem;
-      text-align: left;
-    }
-
-    .legend b {
-      font-size: .75rem;
-      letter-spacing: .05em;
-      text-transform: uppercase;
-      color: var(--muted);
-    }
-
-    .legend span {
-      display: inline-flex;
-      align-items: center;
-      gap: .4rem;
-    }
-
-    .legend i {
-      width: .8rem;
-      height: .8rem;
-      border-radius: 50%;
-    }
-
-    .doc [data-nid] {
-      border-bottom: 1px dotted color-mix(in srgb, var(--text) 60%, transparent);
-      cursor: help;
-    }
-
-    .doc [data-nid][data-n]::after {
-      content: attr(data-n);
-      font-size: .65em;
-      font-weight: 700;
-      line-height: 0;
-      vertical-align: super;
-      margin-left: 1px;
-      font-style: normal;
-      text-decoration: none;
-      color: #3b82f6;
-      -webkit-text-fill-color: #3b82f6;
-      background: none;
-      user-select: none;
-    }
-
-    .notes {
-      margin-top: 1.5rem;
-      padding-top: .75rem;
-      border-top: 1px solid color-mix(in srgb, var(--text) 15%, transparent);
-      font-size: .875rem;
-      text-align: left;
-    }
-
-    .notes b {
-      display: block;
-      margin-bottom: .35rem;
-      font-size: .75rem;
-      letter-spacing: .05em;
-      text-transform: uppercase;
-      color: var(--muted);
-    }
-
-    .note-row {
-      display: flex;
-      align-items: flex-start;
-      gap: .5rem;
-      width: 100%;
-      padding: .3rem .4rem;
-      border: 0;
-      border-radius: .5rem;
-      background: none;
-      color: var(--text);
-      font: inherit;
-      text-align: left;
+    mark.annot-hl {
+      background: color-mix(in srgb, var(--hl, #f5c542) 38%, transparent);
+      color: inherit;
+      border-radius: 2px;
       cursor: pointer;
+      -webkit-text-fill-color: currentColor;
     }
 
-    .note-row:hover {
-      background: color-mix(in srgb, var(--text) 8%, transparent);
+    .annot-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
+    .annot-row {
+      display: flex; flex-direction: column; gap: .3rem;
+      padding: .5rem .6rem; border-radius: .75rem;
+      background: color-mix(in srgb, var(--text) 6%, transparent);
+    }
+    .annot-top { display: flex; align-items: center; gap: .15rem; }
+    .annot-quote {
+      flex: 1; min-width: 0; display: block; text-align: left;
+      border: 0; background: none; padding: 0;
+      font-size: .85rem; line-height: 1.6; color: var(--text); cursor: pointer;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .annot-quote:hover { color: var(--accent); }
+    .annot-input {
+      width: 100%; resize: none; box-sizing: border-box;
+      min-height: 3.2rem; max-height: 10rem;
+      padding: .45rem .55rem; border-radius: .5rem;
+      border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
+      background: var(--bg); color: var(--text);
+      font: inherit; font-size: .85rem; line-height: 1.4; outline: none;
+    }
+    .annot-input:focus { border-color: var(--con); }
+
+    .toc-export {
+      pointer-events: auto;
+      margin-left: auto;
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 1.6rem; height: 1.6rem; border-radius: .4rem;
+      color: var(--muted); cursor: pointer;
+    }
+    .toc-export:hover, .toc-export:focus-visible {
+      color: var(--text);
+      background: color-mix(in srgb, var(--text) 12%, transparent);
+      outline: none;
     }
 
-    .note-row sup {
-      flex: none;
-      margin-top: .1rem;
-      font-size: .75rem;
-      font-weight: 700;
-      color: #3b82f6;
+    #exportMenu {
+      position: fixed; z-index: 120; min-width: 15rem; padding: .3rem;
+      display: flex; flex-direction: column; gap: .1rem;
+      border-radius: .8rem; background: var(--bg);
+      border: 1px solid color-mix(in srgb, var(--text) 15%, transparent);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, .25);
     }
-
-    .note-row span {
-      min-width: 0;
-      overflow-wrap: anywhere;
+    #exportMenu button {
+      display: flex; align-items: center; gap: .5rem; width: 100%;
+      padding: .5rem .7rem; border: 0; border-radius: .55rem; background: none;
+      color: var(--text); font: inherit; font-size: .875rem; text-align: left; cursor: pointer;
     }
+    #exportMenu button:hover { background: color-mix(in srgb, var(--text) 9%, transparent); }
+    .api-box { margin-top: 1rem; display: flex; flex-direction: column; gap: .5rem; }
+    .api-title { display: flex; align-items: center; gap: .4rem; color: var(--muted); font-size: .8rem; font-weight: 700; }
+    .api-row { display: flex; gap: .5rem; }
+    .api-row input {
+      flex: 1; min-width: 0; height: 2.25rem; padding: 0 .9rem; border-radius: 999px;
+      border: 1px solid color-mix(in srgb, var(--text) 16%, transparent);
+      background: var(--bg); color: var(--text); font-size: .875rem; outline: none;
+    }
+    .api-row input:focus { border-color: var(--accent); }
+    .api-msg { min-height: 1.1rem; font-size: .8rem; color: var(--muted); }
+    .api-msg[data-err="1"] { color: #d9534f; }
+    .toc-export + .toc-export { margin-left: 0; }
+    .toc-export[aria-pressed="true"] { color: var(--accent); }
+    .doc.no-bm .mk { display: none; }
+    .doc.no-bm [data-marked] { background: none; box-shadow: none; }
+    .doc, .doc * { -webkit-user-select: text; user-select: text; }
+    .doc .mk, .doc .mk * { -webkit-user-select: none; user-select: none; }
 
-    .note-row small {
-      display: block;
-      color: var(--muted);
-      font-size: inherit;
+    #annots { border: 0; border-radius: 0; background: none; padding: 0; box-shadow: none; }
+
+    @media (max-width: 1023px) {
+      #annots {
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 70;
+        max-height: 45svh; overflow-y: auto; margin: 0;
+        padding: .5rem 1.25rem calc(.75rem + env(safe-area-inset-bottom));
+        background: var(--bg);
+      }
     }
   </style>
 </head>
@@ -1099,12 +185,15 @@
 
         <nav id="spots" class="panel marks" aria-label="Vị trí đã đánh dấu trong tài liệu" hidden>
           <div class="panel-head">
-            <iconify-icon icon="mdi:bookmark"></iconify-icon>
             <span>Vị trí đánh dấu</span>
             <span id="spotsCount" class="count">0</span>
           </div>
           <ul id="spotsList" class="marks-list"></ul>
         </nav>
+
+        <section id="annots" class="panel marks" aria-label="Ghi chú trong tài liệu" hidden>
+          <ul id="annotsList" class="annot-list"></ul>
+        </section>
       </aside>
 
       <div class="doc-column">
@@ -1116,6 +205,26 @@
       <aside id="toc" class="panel toc" aria-label="Mục lục" hidden></aside>
     </div>
   </main>
+
+  <div id="exportMenu" role="menu" hidden>
+    <button type="button" role="menuitem" data-mode="notes" data-zip="1">
+      <iconify-icon icon="lucide:file-archive"></iconify-icon><span>Có ghi chú · nén .gz (nhẹ nhất)</span>
+    </button>
+    <button type="button" role="menuitem" data-mode="plain" data-zip="1">
+      <iconify-icon icon="lucide:file-archive"></iconify-icon><span>Không ghi chú · nén .gz</span>
+    </button>
+    <button type="button" role="menuitem" data-mode="notes" data-zip="0">
+      <iconify-icon icon="lucide:notebook-pen"></iconify-icon><span>Có ghi chú · JSON thường</span>
+    </button>
+    <button type="button" role="menuitem" data-mode="plain" data-zip="0">
+      <iconify-icon icon="lucide:file-text"></iconify-icon><span>Không ghi chú · JSON thường</span>
+    </button>
+  </div>
+
+  <button id="selBtn" type="button" hidden>
+    <iconify-icon icon="lucide:message-square-plus"></iconify-icon>
+    <span>Ghi chú</span>
+  </button>
 
   <div id="aboutPopup"
     class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-3 sm:p-5 backdrop-blur-md">
@@ -1137,8 +246,10 @@
 
         <div class="flex min-w-0 flex-1 flex-col justify-center pl-1 pr-5 sm:pl-2 sm:pr-8">
           <div id="aboutViewerBar" class="flex flex-wrap items-center gap-2">
-            <label class="btn">Chọn tệp<input id="file" type="file" accept=".json,application/json" hidden></label>
+            <label class="btn">Chọn tệp<input id="file" type="file" accept=".json,.gz,.zip,application/json,application/gzip,application/zip" hidden></label>
             <button id="tocToggle" type="button" class="btn" aria-pressed="true" hidden>Mục lục</button>
+            <button id="bmBtn" type="button" class="btn" data-bm-toggle aria-pressed="true" hidden>Bookmark</button>
+            <button id="exportBtn" type="button" class="btn" data-export-trigger title="Xuất JSON" hidden>Xuất JSON</button>
           </div>
 
           <div id="fileListWrap" class="file-list-wrap" hidden>
@@ -1149,7 +260,17 @@
             <ul id="fileList" class="file-list"></ul>
           </div>
 
-          <div id="aboutHint">Chọn hoặc kéo thả tệp xuất từ trình soạn thảo vào đây.</div>
+          <form id="apiForm" class="api-box" autocomplete="off">
+            <label for="apiUrl" class="api-title">
+              <iconify-icon icon="lucide:link"></iconify-icon>
+              <span>Dán API chứa JSON nén (.gz / .zip)</span>
+            </label>
+            <div class="api-row">
+              <input id="apiUrl" type="url" inputmode="url" spellcheck="false" placeholder="https://…/tai-lieu.json.gz">
+              <button id="apiGo" type="submit" class="btn">Tải</button>
+            </div>
+            <div id="apiMsg" class="api-msg" role="status"></div>
+          </form>
         </div>
       </div>
     </section>
@@ -1279,10 +400,14 @@
       const ALIGNS = ["left", "center", "right", "justify"];
       const SPECIAL_KINDS = ["quote", "cite", "poem", "dropcap"];
       const MAX_SIZE = 2 * 1024 * 1024;
+      const MAX_PACKED = 5 * 1024 * 1024;
+      const MAX_UNPACKED = 12 * 1024 * 1024;
       const TOC_PREF_KEY = "mixer-toc-visible";
       const MARKS_KEY = "mixer-marks";
       const SPOTS_KEY = "mixer-bookmarks";
-      const RESERVED_KEYS = new Set(["mixer-theme", TOC_PREF_KEY, MARKS_KEY, SPOTS_KEY]);
+      const ANNOT_KEY = "mixer-annots";
+      const BM_KEY = "mixer-bookmark-ui";
+      const RESERVED_KEYS = new Set(["mixer-theme", TOC_PREF_KEY, MARKS_KEY, SPOTS_KEY, ANNOT_KEY, BM_KEY]);
       const narrow = window.matchMedia("(max-width:1023px)");
 
       let tocEnabled = (() => {
@@ -1332,6 +457,35 @@
           console.warn("Không thể lưu vị trí đánh dấu:", error);
         }
       }
+
+      let bmOn = (() => {
+        try { return localStorage.getItem(BM_KEY) !== "false"; } catch { return true; }
+      })();
+      const openNotes = new Set();
+
+      let annots = (() => {
+        try {
+          const saved = JSON.parse(localStorage.getItem(ANNOT_KEY) || "[]");
+          return Array.isArray(saved)
+            ? saved.filter(a => a && typeof a.id === "string" && typeof a.doc === "string" &&
+              Number.isInteger(a.b) && Number.isInteger(a.s) && Number.isInteger(a.e) &&
+              typeof a.quote === "string" && typeof a.note === "string")
+            : [];
+        } catch {
+          return [];
+        }
+      })();
+
+      let annotSaveTimer = 0;
+      function saveAnnots() {
+        try {
+          localStorage.setItem(ANNOT_KEY, JSON.stringify(annots.filter(a => a.doc.startsWith("local:"))));
+        } catch (error) {
+          console.warn("Không thể lưu ghi chú:", error);
+        }
+      }
+
+      const newAnnotId = () => "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
       const color = v => v === GR ? GR : typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : null;
       const src = v => typeof v === "string" && v.length < 9e5 &&
@@ -1750,13 +904,36 @@
           return;
         }
 
+        const tocAction = (icon, title, fn) => {
+          const btn = mk("span", "toc-export");
+          btn.setAttribute("role", "button");
+          btn.tabIndex = 0;
+          btn.title = title;
+          btn.setAttribute("aria-label", title);
+          btn.append(ico(icon));
+          btn.addEventListener("click", e => { e.stopPropagation(); fn(); });
+          btn.addEventListener("keydown", e => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              e.stopPropagation();
+              fn();
+            }
+          });
+          return btn;
+        };
+        const bmTog = tocAction("mdi:bookmark", "Bật/tắt bookmark", toggleBm);
+        bmTog.dataset.bmToggle = "1";
+        const exp = tocAction("lucide:download", "Xuất JSON", () => showExportMenu(exp));
+        exp.dataset.exportTrigger = "1";
+
         const fold = mk("button", "toc-fold");
         fold.type = "button";
         fold.setAttribute("aria-expanded", String(!tocFolded));
         fold.append(
           ico("lucide:list"),
           textSpan("Mục lục"),
-          textSpan(String(items.length), "count"),
+          bmTog,
+          exp,
           ico("lucide:chevron-down", "toc-chevron")
         );
         fold.addEventListener("click", () => {
@@ -1792,6 +969,7 @@
 
         tocEl.append(list);
         tocEl.hidden = false;
+        syncBm();
         updateSpy();
       }
 
@@ -1806,6 +984,22 @@
       };
       addEventListener("scroll", requestSpy, { passive: true });
       addEventListener("resize", requestSpy);
+
+      function syncBm() {
+        $("doc").classList.toggle("no-bm", !bmOn);
+        document.querySelectorAll("[data-bm-toggle]").forEach(el => {
+          el.setAttribute("aria-pressed", String(bmOn));
+          el.title = bmOn ? "Tắt bookmark" : "Bật bookmark";
+          el.querySelector("iconify-icon")?.setAttribute("icon", bmOn ? "mdi:bookmark" : "mdi:bookmark-off-outline");
+        });
+      }
+
+      function toggleBm() {
+        bmOn = !bmOn;
+        try { localStorage.setItem(BM_KEY, String(bmOn)); } catch { }
+        syncBm();
+        renderSpots();
+      }
 
       function spotText(on) {
         return on ? "Bỏ đánh dấu đoạn này" : "Đánh dấu đoạn này";
@@ -1851,7 +1045,7 @@
         list.replaceChildren();
 
         const id = docs[activeDocIndex]?.id;
-        if (!id || $("doc").hidden) {
+        if (!id || $("doc").hidden || !bmOn) {
           box.hidden = true;
           return;
         }
@@ -1868,7 +1062,8 @@
           const link = mk("button", "mark-link");
           link.type = "button";
           link.title = label;
-          link.append(ico("mdi:bookmark"), textSpan(label));
+          // link.append(ico("mdi:bookmark"), textSpan(label));
+          link.append(textSpan(label));
           link.addEventListener("click", () => goToSpot(node));
 
           const remove = mk("button", "mark-remove");
@@ -1882,6 +1077,406 @@
           list.append(row);
         });
       }
+
+      const docAnnots = () => {
+        const id = docs[activeDocIndex]?.id;
+        return id ? annots.filter(a => a.doc === id) : [];
+      };
+
+      function textNodesOf(block) {
+        const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, {
+          acceptNode: n => n.parentElement && n.parentElement.closest(".mk")
+            ? NodeFilter.FILTER_REJECT
+            : NodeFilter.FILTER_ACCEPT
+        });
+        const out = [];
+        let n;
+        while ((n = walker.nextNode())) out.push(n);
+        return out;
+      }
+
+      function highlightSeg(id, seg) {
+        const block = $("doc").querySelector(`[data-b="${seg.b}"]`);
+        if (!block) return;
+
+        let pos = 0;
+        textNodesOf(block).forEach(node => {
+          const len = node.length;
+          const from = Math.max(seg.s, pos) - pos;
+          const to = Math.min(seg.e, pos + len) - pos;
+          pos += len;
+          if (to <= from) return;
+
+          let target = node;
+          if (from > 0) target = node.splitText(from);
+          if (to - from < target.length) target.splitText(to - from);
+
+          const m = document.createElement("mark");
+          m.className = "annot-hl";
+          m.dataset.aid = id;
+          target.replaceWith(m);
+          m.append(target);
+        });
+      }
+
+      const segsOf = a => {
+        const ok = x => x && Number.isInteger(x.b) && Number.isInteger(x.s) && Number.isInteger(x.e) && x.e > x.s;
+        const list = Array.isArray(a.segs) ? a.segs.filter(ok) : [];
+        return list.length ? list : [{ b: a.b, s: a.s, e: a.e }];
+      };
+
+      function highlightOne(a) {
+        segsOf(a).forEach(seg => highlightSeg(a.id, seg));
+      }
+
+      function clearHighlights() {
+        const docEl = $("doc");
+        docEl.querySelectorAll("mark.annot-hl").forEach(m => m.replaceWith(...m.childNodes));
+        docEl.normalize();
+      }
+
+      function applyHighlights() {
+        docAnnots().forEach(highlightOne);
+      }
+
+      function closeNote(id) {
+        if (openNotes.delete(id)) renderAnnots();
+      }
+
+      function openNote(id, focus) {
+        openNotes.add(id);
+        $("annots").classList.remove("collapsed");
+        renderAnnots(focus ? id : undefined);
+      }
+
+      function renderAnnots(focusId) {
+        const box = $("annots");
+        const list = $("annotsList");
+        list.replaceChildren();
+
+        if (!docs[activeDocIndex] || $("doc").hidden) {
+          box.hidden = true;
+          return;
+        }
+
+        const items = docAnnots()
+          .filter(a => openNotes.has(a.id))
+          .sort((x, y) => x.b - y.b || x.s - y.s);
+        box.hidden = items.length === 0;
+
+        items.forEach(a => {
+          const li = mk("li", "annot-row");
+          li.dataset.aid = a.id;
+          li.addEventListener("pointerdown", e => {
+            if (e.target.closest("button")) li._keep = true;
+          });
+
+          const top = mk("div", "annot-top");
+
+          const quote = mk("button", "annot-quote");
+          quote.type = "button";
+          quote.title = a.quote;
+          quote.textContent = a.quote;
+          quote.addEventListener("click", () => {
+            li._keep = false;
+            const h = $("doc").querySelector(`mark[data-aid="${a.id}"]`);
+            if (h) goToSpot(h);
+          });
+
+          const eye = mk("button", "mark-remove");
+          eye.type = "button";
+          eye.setAttribute("aria-label", "Ẩn ghi chú");
+          eye.title = "Ẩn ghi chú (bấm lại vào đoạn đã tô để mở)";
+          eye.append(ico("lucide:eye"));
+          eye.addEventListener("click", () => {
+            li._keep = false;
+            closeNote(a.id);
+          });
+
+          const remove = mk("button", "mark-remove");
+          remove.type = "button";
+          remove.setAttribute("aria-label", "Xóa ghi chú");
+          remove.title = "Xóa ghi chú";
+          remove.append(ico("lucide:x"));
+          remove.addEventListener("click", () => {
+            li._keep = false;
+            openNotes.delete(a.id);
+            annots = annots.filter(x => x.id !== a.id);
+            saveAnnots();
+            clearHighlights();
+            applyHighlights();
+            renderAnnots();
+          });
+
+          top.append(quote, eye, remove);
+
+          const ta = mk("textarea", "annot-input");
+          ta.rows = 2;
+          ta.maxLength = 1000;
+          ta.placeholder = "Nhập ghi chú...";
+          ta.value = a.note;
+          ta.setAttribute("aria-label", "Ghi chú cho đoạn: " + a.quote.slice(0, 40));
+          const fit = () => {
+            ta.style.height = "auto";
+            ta.style.height = Math.min(ta.scrollHeight, 160) + "px";
+          };
+          ta.addEventListener("input", () => {
+            a.note = ta.value;
+            fit();
+            clearTimeout(annotSaveTimer);
+            annotSaveTimer = setTimeout(saveAnnots, 300);
+          });
+          ta.addEventListener("blur", () => {
+            setTimeout(() => {
+              if (li._keep) { li._keep = false; return; }
+              if (!document.hasFocus() || document.activeElement === ta) return;
+              closeNote(a.id);
+            }, 150);
+          });
+
+          li.append(top, ta);
+          list.append(li);
+          if (a.note) requestAnimationFrame(fit);
+        });
+
+        if (focusId) {
+          const row = list.querySelector(`[data-aid="${focusId}"]`);
+          row?.querySelector("textarea")?.focus({ preventScroll: true });
+        }
+      }
+
+      const selBtn = $("selBtn");
+      const annotsBox = $("annots");
+      const railEl = document.querySelector(".rail");
+      function placeAnnots() {
+        if (narrow.matches) {
+          if (annotsBox.parentElement !== document.body) document.body.append(annotsBox);
+        } else if (annotsBox.parentElement !== railEl) {
+          $("spots").after(annotsBox);
+        }
+      }
+      placeAnnots();
+      narrow.addEventListener("change", placeAnnots);
+      let pendingSel = null;
+      let selTimer = 0;
+
+      function currentSel() {
+        const docEl = $("doc");
+        const sel = getSelection();
+        if (docEl.hidden || !sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
+
+        const r = sel.getRangeAt(0);
+        if (!docEl.contains(r.commonAncestorContainer)) return null;
+
+        const blocks = [...docEl.querySelectorAll("[data-b]")];
+        const hit = blocks.filter(blk => r.intersectsNode(blk));
+        if (!hit.length) return null;
+
+        const elOf = n => n.nodeType === 1 ? n : n.parentElement;
+        const sb = elOf(r.startContainer)?.closest("[data-b]");
+        const eb = elOf(r.endContainer)?.closest("[data-b]");
+        const first = sb && docEl.contains(sb) ? sb : hit[0];
+        const last = eb && docEl.contains(eb) ? eb : hit[hit.length - 1];
+        const i0 = blocks.indexOf(first);
+        const i1 = blocks.indexOf(last);
+        if (i0 < 0 || i1 < i0) return null;
+
+        const segs = [];
+        const quotes = [];
+        for (let i = i0; i <= i1; i++) {
+          const blk = blocks[i];
+          const rng = document.createRange();
+          rng.selectNodeContents(blk);
+          const full = rng.toString();
+
+          let s = 0;
+          let e = full.length;
+          if (blk === sb) {
+            rng.setEnd(r.startContainer, r.startOffset);
+            s = rng.toString().length;
+          }
+          if (blk === eb) {
+            rng.selectNodeContents(blk);
+            rng.setEnd(r.endContainer, r.endOffset);
+            e = rng.toString().length;
+          }
+
+          const raw = full.slice(s, e);
+          const text = raw.trim();
+          if (!text) continue;
+          s += raw.length - raw.trimStart().length;
+          e = s + text.length;
+
+          segs.push({ b: Number(blk.dataset.b), s, e });
+          quotes.push(text.replace(/\s+/g, " "));
+        }
+        if (!segs.length) return null;
+
+        return {
+          sel: { segs, quote: quotes.join(" ").slice(0, 300) },
+          rect: r.getBoundingClientRect()
+        };
+      }
+
+      function updateSelBtn() {
+        const info = popup.classList.contains("hidden") ? currentSel() : null;
+        if (!info) {
+          pendingSel = null;
+          selBtn.hidden = true;
+          return;
+        }
+
+        pendingSel = info.sel;
+        selBtn.hidden = false;
+
+        const w = selBtn.offsetWidth || 90;
+        const h = selBtn.offsetHeight || 32;
+        const coarse = matchMedia("(pointer:coarse)").matches;
+        let top = coarse ? info.rect.bottom + 12 : info.rect.top - h - 8;
+        if (top < 8) top = info.rect.bottom + 10;
+        top = Math.min(top, innerHeight - h - 8);
+        const left = Math.min(Math.max(8, info.rect.left + info.rect.width / 2 - w / 2), innerWidth - w - 8);
+        selBtn.style.top = top + "px";
+        selBtn.style.left = left + "px";
+      }
+
+      const scheduleSel = () => {
+        clearTimeout(selTimer);
+        selTimer = setTimeout(updateSelBtn, 120);
+      };
+      document.addEventListener("selectionchange", scheduleSel);
+      addEventListener("scroll", scheduleSel, { passive: true });
+      addEventListener("resize", scheduleSel);
+
+      selBtn.addEventListener("mousedown", e => e.preventDefault());
+      selBtn.addEventListener("click", () => {
+        const id = docs[activeDocIndex]?.id;
+        const info = pendingSel;
+        if (!id || !info) return;
+
+        const a = {
+          id: newAnnotId(), doc: id,
+          b: info.segs[0].b, s: info.segs[0].s, e: info.segs[0].e,
+          segs: info.segs, quote: info.quote, note: ""
+        };
+        annots.push(a);
+        saveAnnots();
+
+        getSelection()?.removeAllRanges();
+        pendingSel = null;
+        selBtn.hidden = true;
+
+        clearHighlights();
+        applyHighlights();
+        openNote(a.id, true);
+      });
+
+      $("doc").addEventListener("click", e => {
+        const m = e.target.closest?.("mark.annot-hl");
+        if (!m || !getSelection().isCollapsed) return;
+        const ids = [];
+        for (let el = m; el; el = el.parentElement?.closest("mark.annot-hl")) {
+          if (!ids.includes(el.dataset.aid)) ids.push(el.dataset.aid);
+        }
+        ids.forEach(id => openNotes.add(id));
+        $("annots").classList.remove("collapsed");
+        renderAnnots(ids[0]);
+      });
+
+      async function exportJson(withNotes = true, zip = true) {
+        const d = docs[activeDocIndex];
+        if (!d) return;
+
+        const f = d.fmt || readFormat(null);
+        const notes = !withNotes ? [] : docAnnots()
+          .sort((x, y) => x.b - y.b || x.s - y.s)
+          .map(a => ({ block: a.b, start: a.s, end: a.e, segments: segsOf(a), text: a.quote, note: a.note }));
+
+        const data = {
+          app: "mixer",
+          version: 1,
+          title: d.label,
+          exportedAt: new Date().toISOString(),
+          docStyle: f.style,
+          docSize: f.size,
+          docFont: f.font,
+          colorLegend: legend,
+          blocks: d.blocks,
+          bookmarks: [...spotSet(d.id)].sort((x, y) => x - y),
+          annotations: notes
+        };
+
+        const name = (d.label || "tai-lieu")
+          .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 80) || "tai-lieu";
+
+        if (!withNotes) {
+          delete data.annotations;
+          delete data.bookmarks;
+        }
+
+        const json = JSON.stringify(data);
+        let blob = new Blob([json], { type: "application/json" });
+        let ext = ".json";
+        if (zip && typeof CompressionStream === "function") {
+          try {
+            blob = await new Response(new Blob([json]).stream().pipeThrough(new CompressionStream("gzip"))).blob();
+            ext = ".json.gz";
+          } catch (error) {
+            console.warn("Không nén được, xuất JSON thường:", error);
+          }
+        }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${name}${withNotes ? "-co-ghi-chu" : ""}${ext}`;
+        document.body.append(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+
+      const exportMenu = $("exportMenu");
+      let exportAnchor = null;
+
+      function hideExportMenu() {
+        exportMenu.hidden = true;
+        exportAnchor = null;
+      }
+
+      function showExportMenu(anchor) {
+        if (!exportMenu.hidden && exportAnchor === anchor) { hideExportMenu(); return; }
+        exportAnchor = anchor;
+        exportMenu.hidden = false;
+        const r = anchor.getBoundingClientRect();
+        const w = exportMenu.offsetWidth, h = exportMenu.offsetHeight;
+        const left = Math.min(Math.max(8, r.right - w), innerWidth - w - 8);
+        let top = r.bottom + 6;
+        if (top + h > innerHeight - 8) top = Math.max(8, r.top - h - 6);
+        exportMenu.style.left = left + "px";
+        exportMenu.style.top = top + "px";
+      }
+
+      exportMenu.addEventListener("click", e => {
+        const btn = e.target.closest("button[data-mode]");
+        if (!btn) return;
+        exportJson(btn.dataset.mode === "notes", btn.dataset.zip === "1");
+        hideExportMenu();
+      });
+      document.addEventListener("pointerdown", e => {
+        if (exportMenu.hidden) return;
+        if (exportMenu.contains(e.target) || e.target.closest?.("[data-export-trigger]")) return;
+        hideExportMenu();
+      }, true);
+      document.addEventListener("keydown", e => {
+        if (e.key === "Escape" && !exportMenu.hidden) hideExportMenu();
+      });
+      addEventListener("scroll", () => { if (!exportMenu.hidden) hideExportMenu(); }, { passive: true });
+
+      $("exportBtn").addEventListener("click", () => showExportMenu($("exportBtn")));
+      $("bmBtn").addEventListener("click", toggleBm);
 
       function render(blocks) {
         const root = $("doc");
@@ -2099,13 +1694,21 @@
         const d = docs[i];
         if (!d) return;
         activeDocIndex = i;
+        openNotes.clear();
         $("doc").hidden = false;
         applyFormat(d.fmt);
         render(d.blocks);
+        applyHighlights();
         fitBlocks();
         showLegend(d.blocks, legend);
         renderLists();
         renderSpots();
+        renderAnnots();
+        $("exportBtn").hidden = false;
+        $("bmBtn").hidden = false;
+        syncBm();
+        selBtn.hidden = true;
+        pendingSel = null;
         window.scrollTo({ top: 0 });
       }
 
@@ -2215,19 +1818,139 @@
         if (!nextDocs.length) throw new Error("empty");
 
         [...spotStore.keys()].filter(k => k.startsWith("file:")).forEach(k => spotStore.delete(k));
+        annots = annots.filter(a => !a.doc.startsWith("file:"));
+
+        if (nextDocs.some(d => d.id === "file:main")) {
+          (Array.isArray(data?.annotations) ? data.annotations : []).slice(0, 500).forEach(n => {
+            if (n && Number.isInteger(n.block) && Number.isInteger(n.start) && Number.isInteger(n.end) &&
+              n.end > n.start && typeof n.text === "string") {
+              annots.push({
+                id: newAnnotId(),
+                doc: "file:main",
+                b: n.block,
+                s: n.start,
+                e: n.end,
+                segs: Array.isArray(n.segments) ? n.segments.filter(x => x && Number.isInteger(x.b) && Number.isInteger(x.s) && Number.isInteger(x.e) && x.e > x.s).slice(0, 200) : undefined,
+                quote: n.text.slice(0, 300),
+                note: typeof n.note === "string" ? n.note.slice(0, 1000) : ""
+              });
+            }
+          });
+          (Array.isArray(data?.bookmarks) ? data.bookmarks : []).filter(Number.isInteger)
+            .forEach(i => spotSet("file:main").add(i));
+        }
+
         docs = nextDocs;
         legend = nextLegend;
         show(0);
       }
 
+      async function inflate(u8, format) {
+        if (typeof DecompressionStream !== "function") throw new Error("nodecomp");
+        const reader = new Blob([u8]).stream().pipeThrough(new DecompressionStream(format)).getReader();
+        const chunks = [];
+        let total = 0;
+        for (; ;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          total += value.length;
+          if (total > MAX_UNPACKED) { reader.cancel(); throw new Error("size"); }
+          chunks.push(value);
+        }
+        const out = new Uint8Array(total);
+        let o = 0;
+        chunks.forEach(c => { out.set(c, o); o += c.length; });
+        return out;
+      }
+
+      async function unzip(u8) {
+        const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+        let end = -1;
+        for (let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--) {
+          if (dv.getUint32(i, true) === 0x06054b50) { end = i; break; }
+        }
+        if (end < 0) throw new Error("zip");
+
+        const count = dv.getUint16(end + 10, true);
+        let p = dv.getUint32(end + 16, true);
+        for (let n = 0; n < count; n++) {
+          if (p + 46 > u8.length || dv.getUint32(p, true) !== 0x02014b50) break;
+          const method = dv.getUint16(p + 10, true);
+          const csize = dv.getUint32(p + 20, true);
+          const nl = dv.getUint16(p + 28, true);
+          const xl = dv.getUint16(p + 30, true);
+          const cl = dv.getUint16(p + 32, true);
+          const lho = dv.getUint32(p + 42, true);
+          const name = new TextDecoder().decode(u8.subarray(p + 46, p + 46 + nl));
+          p += 46 + nl + xl + cl;
+
+          if (!/\.json$/i.test(name)) continue;
+          const start = lho + 30 + dv.getUint16(lho + 26, true) + dv.getUint16(lho + 28, true);
+          const data = u8.subarray(start, start + csize);
+          if (method === 0) return data;
+          if (method === 8) return inflate(data, "deflate-raw");
+          break;
+        }
+        throw new Error("zip");
+      }
+
+      async function bytesToJson(buf) {
+        let u8 = new Uint8Array(buf);
+        if (u8[0] === 0x1f && u8[1] === 0x8b) u8 = await inflate(u8, "gzip");
+        else if (u8[0] === 0x50 && u8[1] === 0x4b) u8 = await unzip(u8);
+        else {
+          const text = new TextDecoder().decode(u8).trim();
+          if (/^H4sI[A-Za-z0-9+/=\s]+$/.test(text)) {
+            const bin = atob(text.replace(/\s+/g, ""));
+            u8 = await inflate(Uint8Array.from(bin, c => c.charCodeAt(0)), "gzip");
+          } else {
+            return JSON.parse(text);
+          }
+        }
+        return JSON.parse(new TextDecoder().decode(u8));
+      }
+
       async function readFile(file) {
         try {
-          if (file.size > MAX_SIZE) throw new Error("size");
-          const parsed = JSON.parse(await file.text());
-          load(parsed);
+          if (file.size > MAX_PACKED) throw new Error("size");
+          load(await bytesToJson(await file.arrayBuffer()));
           closeAbout(false);
         } catch {
-          alert("Không đọc được tệp JSON hợp lệ của trình soạn thảo.");
+          alert("Không đọc được tệp JSON (hoặc JSON nén .gz / .zip) hợp lệ của trình soạn thảo.");
+        }
+      }
+
+      async function loadFromApi(raw) {
+        const msg = $("apiMsg");
+        const say = (text, err) => { msg.textContent = text; msg.dataset.err = err ? "1" : ""; };
+
+        let url;
+        try {
+          url = new URL(raw.trim(), location.href);
+          if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("proto");
+        } catch {
+          say("Đường dẫn API không hợp lệ.", true);
+          return;
+        }
+
+        say("Đang tải…");
+        $("apiGo").disabled = true;
+        try {
+          const res = await fetch(url, { credentials: "omit", cache: "no-store" });
+          if (!res.ok) throw new Error("http");
+          if (Number(res.headers.get("content-length")) > MAX_PACKED) throw new Error("size");
+          const buf = await res.arrayBuffer();
+          if (buf.byteLength > MAX_PACKED) throw new Error("size");
+          load(await bytesToJson(buf));
+          say("");
+          closeAbout(false);
+        } catch (err) {
+          openAbout(trigger);
+          say(err?.message === "size"
+            ? "Dữ liệu quá lớn."
+            : "Không đọc được dữ liệu. Kiểm tra đường dẫn, CORS của API hoặc định dạng JSON nén.", true);
+        } finally {
+          $("apiGo").disabled = false;
         }
       }
 
@@ -2242,7 +1965,14 @@
         $("legend").hidden = true;
         $("toc").hidden = true;
         renderLists();
-        openAbout(trigger);
+
+        const srcParam = new URLSearchParams(location.search).get("src");
+        if (srcParam) {
+          $("apiUrl").value = srcParam;
+          loadFromApi(srcParam);
+        } else {
+          openAbout(trigger);
+        }
       })();
 
       $("tocToggle").onclick = () => {
@@ -2259,39 +1989,9 @@
         if (f) readFile(f);
       };
 
-      sheet.addEventListener("dragover", e => {
+      $("apiForm").addEventListener("submit", e => {
         e.preventDefault();
-        sheet.classList.add("over");
-      });
-      sheet.addEventListener("dragleave", e => {
-        if (!sheet.contains(e.relatedTarget)) {
-          sheet.classList.remove("over");
-        }
-      });
-      sheet.addEventListener("drop", e => {
-        e.preventDefault();
-        sheet.classList.remove("over");
-        const f = e.dataTransfer?.files?.[0];
-        if (f) readFile(f);
-      });
-
-      addEventListener("dragover", e => {
-        e.preventDefault();
-        if (popup.classList.contains("hidden")) {
-          openAbout(trigger);
-        }
-        sheet.classList.add("over");
-      });
-      addEventListener("dragleave", e => {
-        if (!e.relatedTarget) {
-          sheet.classList.remove("over");
-        }
-      });
-      addEventListener("drop", e => {
-        e.preventDefault();
-        sheet.classList.remove("over");
-        const f = e.dataTransfer?.files?.[0];
-        if (f) readFile(f);
+        loadFromApi($("apiUrl").value);
       });
     })();
   </script>

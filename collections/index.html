@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="vi">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Bộ sưu tập</title>
+  <meta name="description" content="Danh sách các tệp JSON nén của Mixer.">
+  <meta name="theme-color" content="#f6f3ee" id="themeColor">
+  <link rel="icon" type="image/svg+xml" href="https://api.iconify.design/boxicons/dino.svg?color=%23b8573a">
+
+  <script>
+    (() => {
+      try {
+        const t = localStorage.getItem("mixer-theme");
+        if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+      } catch { }
+    })();
+  </script>
+
+  <link rel="stylesheet" href="../theme.css">
+  <script src="https://code.iconify.design/iconify-icon/3.0.0/iconify-icon.min.js"></script>
+
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
+    html {
+      -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100svh;
+      background: var(--bg, #f6f3ee);
+      color: var(--text, #2a2623);
+      font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+      color: inherit;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .wrap {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 1.25rem 1.25rem 4rem;
+    }
+
+    .top {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+      font-size: 1.75rem;
+      font-weight: 800;
+    }
+
+    .brand iconify-icon {
+      width: 2rem;
+      height: 2rem;
+      color: var(--con, #b8573a);
+    }
+
+    .brand span {
+      background: linear-gradient(to right, var(--con, #b8573a), var(--vow, #3a7bd5));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .grow {
+      flex: 1;
+    }
+
+    .icon-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.25rem;
+      height: 2.25rem;
+      border: 0;
+      border-radius: 50%;
+      background: none;
+      color: var(--muted, #7a736c);
+      cursor: pointer;
+    }
+
+    .icon-btn:hover {
+      background: color-mix(in srgb, var(--text, #2a2623) 9%, transparent);
+      color: var(--text, #2a2623);
+    }
+
+    h1 {
+      margin: 0 0 .25rem;
+      font-size: 1.15rem;
+    }
+
+    .sub {
+      margin: 0 0 1rem;
+      color: var(--muted, #7a736c);
+      font-size: .9rem;
+    }
+
+    .tools {
+      display: flex;
+      gap: .5rem;
+      margin-bottom: 1rem;
+    }
+
+    .tools input,
+    .tools select {
+      height: 2.5rem;
+      border-radius: 999px;
+      padding: 0 1rem;
+      outline: none;
+      border: 1px solid color-mix(in srgb, var(--text, #2a2623) 16%, transparent);
+      background: color-mix(in srgb, var(--bg, #f6f3ee) 90%, var(--text, #2a2623) 4%);
+    }
+
+    .tools input {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .tools input:focus,
+    .tools select:focus {
+      border-color: var(--accent, #2563eb);
+    }
+
+    .list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: .5rem;
+    }
+
+    .item {
+      display: flex;
+      align-items: center;
+      gap: .85rem;
+      padding: .8rem 1rem;
+      border-radius: 1rem;
+      border: 1px solid color-mix(in srgb, var(--text, #2a2623) 12%, transparent);
+      background: color-mix(in srgb, var(--bg, #f6f3ee) 93%, var(--text, #2a2623) 4%);
+      transition: border-color .15s ease, background-color .15s ease, transform .1s ease;
+    }
+
+    .item:hover {
+      border-color: color-mix(in srgb, var(--accent, #2563eb) 55%, transparent);
+      background: color-mix(in srgb, var(--accent, #2563eb) 8%, var(--bg, #f6f3ee));
+    }
+
+    .item:active {
+      transform: scale(.99);
+    }
+
+    .item:focus-visible {
+      outline: 2px solid var(--accent, #2563eb);
+      outline-offset: 2px;
+    }
+
+    .ico {
+      flex: none;
+      display: grid;
+      place-items: center;
+      width: 2.6rem;
+      height: 2.6rem;
+      border-radius: .8rem;
+      background: color-mix(in srgb, var(--con, #b8573a) 14%, transparent);
+      color: var(--con, #b8573a);
+    }
+
+    .ico iconify-icon {
+      width: 1.4rem;
+      height: 1.4rem;
+    }
+
+    .body {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .name {
+      font-weight: 650;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .meta {
+      margin-top: .1rem;
+      color: var(--muted, #7a736c);
+      font-size: .8rem;
+    }
+
+    .go {
+      flex: none;
+      color: var(--muted, #7a736c);
+    }
+
+    .state {
+      padding: 2rem 1rem;
+      text-align: center;
+      color: var(--muted, #7a736c);
+      font-size: .92rem;
+      border: 2px dashed color-mix(in srgb, var(--text, #2a2623) 16%, transparent);
+      border-radius: 1rem;
+    }
+
+    .state code {
+      display: inline-block;
+      margin-top: .5rem;
+      padding: .15rem .5rem;
+      border-radius: .4rem;
+      background: color-mix(in srgb, var(--text, #2a2623) 8%, transparent);
+      font-size: .8rem;
+    }
+
+    .state[data-err="1"] {
+      color: #d9534f;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <header class="top">
+      <a class="brand" href="../" aria-label="Mixer">
+        <iconify-icon icon="boxicons:dino"></iconify-icon><span>Mixer</span>
+      </a>
+      <div class="grow"></div>
+      <button id="themeToggle" class="icon-btn" type="button" aria-label="Chuyển giao diện sáng/tối">
+        <iconify-icon id="themeIcon" icon="lucide:moon"></iconify-icon>
+      </button>
+    </header>
+
+    <h1>Bộ sưu tập</h1>
+    <p class="sub" id="count">Đang tải danh sách…</p>
+
+    <div class="tools">
+      <input id="q" type="search" placeholder="Tìm tệp…" aria-label="Tìm tệp" autocomplete="off">
+      <select id="sort" aria-label="Sắp xếp">
+        <option value="default">Mặc định</option>
+        <option value="date">Mới nhất</option>
+        <option value="name">Tên A–Z</option>
+      </select>
+    </div>
+
+    <ul id="list" class="list"></ul>
+    <div id="state" class="state" hidden></div>
+  </div>
+
+  <script src="./constants.js"></script>
+  <script>
+    (() => {
+      const CONFIG = Object.assign({ reader: "../reader/index.html", files: [] }, window.COLLECTION || {});
+
+      const $ = id => document.getElementById(id);
+      const EXT = /\.(json\.gz|json|gz|zip)$/i;
+      let items = [];
+
+      (() => {
+        const root = document.documentElement;
+        const mq = matchMedia("(prefers-color-scheme: dark)");
+        const cur = () => root.dataset.theme === "light" || root.dataset.theme === "dark"
+          ? root.dataset.theme : (mq.matches ? "dark" : "light");
+        const paint = () => {
+          const dark = cur() === "dark";
+          $("themeIcon").setAttribute("icon", dark ? "lucide:sun" : "lucide:moon");
+          $("themeColor").setAttribute("content", dark ? "#181a1d" : "#f6f3ee");
+        };
+        $("themeToggle").addEventListener("click", () => {
+          const next = cur() === "dark" ? "light" : "dark";
+          root.dataset.theme = next;
+          try { localStorage.setItem("mixer-theme", next); } catch { }
+          paint();
+        });
+        paint();
+      })();
+
+      function norm(x, base) {
+        const o = typeof x === "string" ? { file: x } : x;
+        const raw = o && (o.url || o.file || o.name);
+        if (typeof raw !== "string" || !raw.trim()) return null;
+
+        const text = raw.trim();
+        const rel = /^(https?:)?\/\//i.test(text) || text.includes("/") ? text : encodeURIComponent(text);
+
+        let abs;
+        try { abs = new URL(rel, base); } catch { return null; }
+        if (abs.protocol !== "https:" && abs.protocol !== "http:") return null;
+
+        let file = abs.pathname.split("/").pop() || "";
+        try { file = decodeURIComponent(file); } catch { }
+
+        const rawDate = o.updated || o.date;
+        const date = rawDate ? new Date(rawDate) : null;
+        const size = Number(o.size);
+
+        return {
+          title: String(o.title || file.replace(EXT, "") || abs.hostname),
+          url: abs.href,
+          size: Number.isFinite(size) && size > 0 ? size : null,
+          date: date && !isNaN(date) ? date : null
+        };
+      }
+
+      const fmtSize = n => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(2)} MB`;
+      const fmtDate = d => d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+      function readerHref(url) {
+        const u = new URL(CONFIG.reader, location.href);
+        u.searchParams.set("src", url);
+        return u.href;
+      }
+
+      function showState(html, err) {
+        const box = $("state");
+        box.replaceChildren();
+        if (typeof html === "string") box.textContent = html;
+        else box.append(...html);
+        box.dataset.err = err ? "1" : "";
+        box.hidden = false;
+      }
+
+      function render() {
+        const q = $("q").value.trim().toLowerCase();
+        const mode = $("sort").value;
+
+        const list = items.filter(it => !q || it.title.toLowerCase().includes(q));
+        if (mode === "name") list.sort((a, b) => a.title.localeCompare(b.title, "vi"));
+        else if (mode === "date") list.sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0));
+
+        const ul = $("list");
+        ul.replaceChildren();
+        $("state").hidden = true;
+        $("count").textContent = q ? `${list.length}/${items.length} tệp` : `${items.length} tệp`;
+
+        if (!list.length) {
+          showState(items.length ? "Không có tệp nào khớp với tìm kiếm." : "Chưa có tệp nào trong bộ sưu tập.");
+          return;
+        }
+
+        list.forEach(it => {
+          const li = document.createElement("li");
+          const a = document.createElement("a");
+          a.className = "item";
+          a.href = readerHref(it.url);
+
+          const ico = document.createElement("span");
+          ico.className = "ico";
+          const icon = document.createElement("iconify-icon");
+          icon.setAttribute("icon", "lucide:file-archive");
+          ico.append(icon);
+
+          const body = document.createElement("span");
+          body.className = "body";
+          const name = document.createElement("div");
+          name.className = "name";
+          name.textContent = it.title;
+          name.title = it.title;
+          const meta = document.createElement("div");
+          meta.className = "meta";
+          meta.textContent = [it.size ? fmtSize(it.size) : "", it.date ? fmtDate(it.date) : ""].filter(Boolean).join(" · ") || "JSON nén";
+          body.append(name, meta);
+
+          const go = document.createElement("iconify-icon");
+          go.className = "go";
+          go.setAttribute("icon", "lucide:chevron-right");
+
+          a.append(ico, body, go);
+          li.append(a);
+          ul.append(li);
+        });
+      }
+
+      $("q").addEventListener("input", render);
+      $("sort").addEventListener("change", render);
+
+      const base = new URL("./", location.href);
+      items = (Array.isArray(CONFIG.files) ? CONFIG.files : []).map(x => norm(x, base)).filter(Boolean);
+
+      if (items.length) {
+        render();
+      } else {
+        $("count").textContent = "Chưa có tệp nào";
+        const code = document.createElement("code");
+        code.textContent = "files: [\"ten-file.json.gz\"]";
+        showState([
+          document.createTextNode("Mở "),
+          Object.assign(document.createElement("b"), { textContent: "constants.js" }),
+          document.createTextNode(" và thêm tên tệp vào danh sách:"),
+          document.createElement("br"),
+          code
+        ]);
+      }
+    })();
+  </script>
+</body>
+
+</html>
